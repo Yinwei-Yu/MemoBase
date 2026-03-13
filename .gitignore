@@ -1,4 +1,21 @@
+# AI Agents and IDE
 .agents
 .vscode
 .school-doc
 AGENTS.md
+.cursor
+.idea
+
+# macOS
+.DS_Store
+
+# temp files and logs
+*.log
+*.tmp
+*.bak
+*.swp
+
+# target files and build artifacts
+target/
+build/
+bin/

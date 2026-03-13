@@ -16,7 +16,7 @@
   - practical knowledge-base intelligent agent platform
   - backend `Go`
   - frontend `React`
-  - vector database `Milvus`
+  - vector database `Qdrant`
   - support for external and local models
 - Recorded required technical scope:
   - hybrid retrieval with vector retrieval and `BM25`
@@ -42,3 +42,35 @@
   - `计算机综合项目实践-项目选题.txt`
   - `课题名称.pdf`
 - Future course-related work should prefer `.school-doc/` as the reference source.
+
+
+## Session 1: Project bootstrap, memory sync, and README setup
+
+**Date**: 2026-03-12
+**Task**: Project bootstrap, memory sync, and README setup
+
+### Summary
+
+Initialized project-level memory in AGENTS.md, established .school-doc as the source of truth for school materials, and wrote the repository README for 知忆 MemoBase.
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `47668fb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

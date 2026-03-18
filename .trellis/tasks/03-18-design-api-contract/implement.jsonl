@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Unified error envelope and HTTP mapping"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Storage and retrieval contract constraints"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Contract quality gate"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer contract checklist"}
+{"file": "doc/接口文档（MVP）.md", "reason": "Existing MVP API baseline"}
+{"file": "doc/后端模块交互架构文档.md", "reason": "Backend service interaction boundaries"}
+{"file": ".trellis/workspace/mirai/journal-1.md", "reason": "Project memory for fixed stack decisions"}

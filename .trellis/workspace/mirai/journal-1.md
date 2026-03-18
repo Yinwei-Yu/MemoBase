@@ -106,3 +106,35 @@ Confirmed the course-project MVP tech stack and recorded key architectural decis
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Finalize and enforce project stack boundaries/specs
+
+**Date**: 2026-03-18
+**Task**: Finalize and enforce project stack boundaries/specs
+
+### Summary
+
+Reworked frontend/backend spec docs from templates into executable standards, then revised them against workspace memory: fixed MVP stack boundaries, explicit non-goals, and dependency constraints.
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8edb33b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

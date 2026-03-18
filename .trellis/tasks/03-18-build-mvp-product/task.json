@@ -1,7 +1,7 @@
 {
-  "id": "design-api-contract",
-  "name": "design-api-contract",
-  "title": "Design Frontend-Backend API Contract",
+  "id": "build-mvp-product",
+  "name": "build-mvp-product",
+  "title": "Build MVP Product End-to-End",
   "description": "",
   "status": "planning",
   "dev_type": null,
@@ -12,7 +12,7 @@
   "createdAt": "2026-03-18",
   "completedAt": null,
   "branch": null,
-  "base_branch": "api-doc",
+  "base_branch": "mvp",
   "worktree_path": null,
   "current_phase": 0,
   "next_action": [

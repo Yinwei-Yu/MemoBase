@@ -216,12 +216,13 @@ MVP 禁止引入（除非团队批准 RFC）：
 ### POST `/knowledge-bases/{kb_id}/documents`
 
 - Content-Type：`multipart/form-data`
+- 当前解析能力：仅支持文本文件（`.txt/.md`）
 
 表单字段：
 
 | 字段 | 必填 | 约束 |
 |---|---|---|
-| `file` | 是 | `pdf/docx/txt/md`，<= 20MB |
+| `file` | 是 | `txt/md`，<= 20MB |
 | `title` | 否 | 1-128 字符 |
 | `chunk_size` | 否 | 200-1200，默认 500 |
 | `chunk_overlap` | 否 | 0-300，默认 100 |
@@ -250,6 +251,50 @@ MVP 禁止引入（除非团队批准 RFC）：
 ### POST `/knowledge-bases/{kb_id}/documents/{doc_id}/reindex`
 
 响应：返回新的 `task_id`
+
+### Document Upload Good / Base / Bad
+
+Good（推荐）：
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/knowledge-bases/kb_001/documents" \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@notes.md" \
+  -F "title=操作系统笔记" \
+  -F "chunk_size=500" \
+  -F "chunk_overlap=100"
+```
+
+结果：`201`，返回 `doc_id + task_id`。
+
+Base（最小可用）：
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/knowledge-bases/kb_001/documents" \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@notes.txt"
+```
+
+结果：`201`，后端使用默认分块参数。
+
+Bad（非法类型）：
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/knowledge-bases/kb_001/documents" \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@notes.pdf"
+```
+
+结果：`422`
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "unsupported file type: only .txt and .md are currently supported"
+  }
+}
+```
 
 ---
 
@@ -309,7 +354,7 @@ MVP 禁止引入（除非团队批准 RFC）：
   "citations": [
     {
       "doc_id": "doc_001",
-      "doc_title": "os-notes.pdf",
+      "doc_title": "os-notes.md",
       "chunk_id": "ck_101",
       "snippet": "线程共享进程地址空间...",
       "score": 0.87,

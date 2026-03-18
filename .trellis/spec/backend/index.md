@@ -49,6 +49,7 @@ Source references for current project agreements:
 | [Error Handling](./error-handling.md) | Error model and HTTP mapping | Defined |
 | [Quality Guidelines](./quality-guidelines.md) | Lint/test/review standards | Defined |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging standards | Defined |
+| [Type Safety](./type-safety.md) | Type rules and null-safety boundaries | Defined |
 
 ---
 

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
+- **Total Sessions**: 5
 - **Last Active**: 2026-03-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~140 | Active |
+| `journal-1.md` | ~223 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 5 | 2026-03-18 | MVP重构进度与待办（WIP） | `e93075e` |
+| 4 | 2026-03-18 | Design frontend-backend API contract for MVP | `e93075e` |
 | 3 | 2026-03-18 | Finalize and enforce project stack boundaries/specs | `8edb33b` |
 | 2 | 2026-03-18 | Finalize MVP tech stack selection | `55dee01` |
 | 1 | 2026-03-12 | Project bootstrap, memory sync, and README setup | `47668fb` |

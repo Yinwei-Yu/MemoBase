@@ -1,51 +1,53 @@
 # State Management
 
-> How state is managed in this project.
-
----
-
-## Overview
-
-<!--
-Document your project's state management conventions here.
-
-Questions to answer:
-- What state management solution do you use?
-- How is local vs global state decided?
-- How do you handle server state?
-- What are the patterns for derived state?
--->
-
-(To be filled by the team)
+> State ownership model for MemoBase frontend.
 
 ---
 
 ## State Categories
 
-<!-- Local state, global state, server state, URL state -->
+1. Local UI state (`useState`/`useReducer`)
+- Component-local concerns: modal open, tab selection, form draft.
 
-(To be filled by the team)
+2. Server state (query cache layer)
+- Data fetched from backend: knowledge bases, docs, chat history, task status.
+- Includes caching, background refetch, invalidation.
 
----
+3. Global app state (single lightweight store solution)
+- Cross-page session context: auth identity, selected workspace, UI preferences.
 
-## When to Use Global State
-
-<!-- Criteria for promoting state to global -->
-
-(To be filled by the team)
-
----
-
-## Server State
-
-<!-- How server data is cached and synchronized -->
-
-(To be filled by the team)
+4. URL state (React Router search params)
+- Filter/sort/page and deep-linkable view state.
 
 ---
 
-## Common Mistakes
+## Promotion Rules
 
-<!-- State management mistakes your team has made -->
+Promote local state to global only when at least one condition is true:
+- Needed by 2+ distant route branches.
+- Must persist across navigation.
+- Represents app/session identity.
 
-(To be filled by the team)
+Do not promote temporary form or modal state to global.
+
+---
+
+## Server State Rules
+
+- Never duplicate query data in global store by default.
+- Mutations must invalidate or update related query caches explicitly.
+- Keep query keys deterministic and typed.
+- Use optimistic updates only with rollback path.
+
+Tooling note:
+- `TanStack Query` + `Zustand` is a practical default pair.
+- If the team picks alternatives, document the choice in this file and keep one stack only.
+
+---
+
+## Common Mistakes (Forbidden)
+
+- Storing server lists in local state and manually syncing.
+- Global store used as a dump for all states.
+- Route-filter state not reflected in URL.
+- Mutations that change server data without cache invalidation.

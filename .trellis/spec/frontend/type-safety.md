@@ -1,51 +1,56 @@
 # Type Safety
 
-> Type safety patterns in this project.
+> TypeScript and runtime validation standards.
 
 ---
 
-## Overview
+## TypeScript Baseline
 
-<!--
-Document your project's type safety conventions here.
+Required compiler posture:
+- `strict: true`
+- `noImplicitAny: true`
+- `strictNullChecks: true`
+- `noUncheckedIndexedAccess: true` (recommended)
 
-Questions to answer:
-- What type system do you use?
-- How are types organized?
-- What validation library do you use?
-- How do you handle type inference?
--->
-
-(To be filled by the team)
+No new code should require lowering strictness.
 
 ---
 
 ## Type Organization
 
-<!-- Where types are defined, shared types vs local types -->
-
-(To be filled by the team)
-
----
-
-## Validation
-
-<!-- Runtime validation patterns (Zod, Yup, io-ts, etc.) -->
-
-(To be filled by the team)
+- API DTO types: colocated in `features/<feature>/types`.
+- Shared cross-feature types: `src/lib/types`.
+- Component-local types: same file or nearby `*.types.ts`.
+- Avoid giant global type files.
 
 ---
 
-## Common Patterns
+## Runtime Validation
 
-<!-- Type utilities, generics, type guards -->
+Use one runtime schema validation library for external boundary validation (for example `zod`):
+- API response parsing for unstable/third-party payloads.
+- URL query param parsing.
+- Complex form schemas.
 
-(To be filled by the team)
+Type-only checks are not enough for untrusted runtime input.
+
+Constraint:
+- Pick one schema library and keep it consistent project-wide.
+
+---
+
+## Safe Patterns
+
+- Prefer `unknown` over `any` for uncertain input.
+- Use discriminated unions for state machines and request status.
+- Narrow nullable values before render usage.
+- Encode API error shape as explicit type.
 
 ---
 
 ## Forbidden Patterns
 
-<!-- any, type assertions, etc. -->
-
-(To be filled by the team)
+- `any` in business logic paths.
+- Double assertion (`as unknown as T`) without boundary justification.
+- Ignoring nullable cases with non-null assertion (`!`) in hot paths.
+- Silent `JSON.parse` usage without schema validation.

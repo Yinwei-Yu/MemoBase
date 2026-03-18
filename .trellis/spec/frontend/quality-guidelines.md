@@ -1,51 +1,58 @@
 # Quality Guidelines
 
-> Code quality standards for frontend development.
+> Frontend quality gate for MemoBase.
 
 ---
 
-## Overview
+## Baseline Tooling
 
-<!--
-Document your project's quality standards here.
+- Lint: `eslint` with `typescript-eslint` and React hooks rules
+- Format: `prettier`
+- Unit/Component tests: `vitest` + `@testing-library/react` (recommended baseline)
+- E2E (critical path): `playwright` (recommended)
 
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
-
-(To be filled by the team)
+All CI-critical checks must pass before merge.
 
 ---
 
 ## Forbidden Patterns
 
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
+- Unhandled promise rejections in UI logic.
+- Direct DOM querying/mutation outside React refs/effects.
+- API calls inside component render body.
+- Hardcoded backend URLs in components.
+- Accessibility regressions (missing labels, unreachable controls).
 
 ---
 
 ## Required Patterns
 
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
+- Every API interaction shows loading and error feedback.
+- Reusable API access through unified client/service layer.
+- Route-level error boundary for uncaught view errors.
+- Explicit empty state for list and search pages.
+- Keep component files focused; extract hooks/services when complexity grows.
 
 ---
 
 ## Testing Requirements
 
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
+- Unit tests for pure utilities and state logic.
+- Component tests for critical interactive components (chat input, citations panel, uploader).
+- Integration tests for key flows:
+  - login/logout
+  - knowledge base create/delete
+  - upload -> status update -> retrievable state
+  - ask question -> answer + citations rendering
+- Add regression tests for every bug fixed in production/demo.
 
 ---
 
 ## Code Review Checklist
 
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+- State ownership is correct (local/global/server/url).
+- API contracts are typed and validated where needed.
+- Error/loading/empty states are complete.
+- Accessibility checks pass for new UI.
+- No cross-feature coupling through private internals.
+- Tests cover success and failure paths.

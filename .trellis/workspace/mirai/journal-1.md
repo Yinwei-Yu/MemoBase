@@ -74,3 +74,35 @@ Initialized project-level memory in AGENTS.md, established .school-doc as the so
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Finalize MVP tech stack selection
+
+**Date**: 2026-03-18
+**Task**: Finalize MVP tech stack selection
+
+### Summary
+
+Confirmed the course-project MVP tech stack and recorded key architectural decisions: frontend uses React + TypeScript + Vite; backend uses Go + Gin; storage uses PostgreSQL plus local filesystem; retrieval uses Qdrant only with hybrid retrieval and jieba-based Chinese tokenization; model access uses external LLM APIs plus Ollama; agent orchestration follows a lightweight ReAct design. Explicitly decided not to introduce OpenSearch, MinIO, Redis, Viper, or Nginx for the current MVP unless future scope expands.
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `55dee01` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

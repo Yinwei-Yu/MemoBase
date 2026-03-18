@@ -1,51 +1,69 @@
 # Logging Guidelines
 
-> How logging is done in this project.
+> Structured logging standards for backend observability.
 
 ---
 
-## Overview
+## Logging Stack
 
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
+- Logger: Go `slog` with JSON handler.
+- Correlation: request id middleware required.
+- Metrics: Prometheus for latency/error counters (logs are not a metrics substitute).
 
 ---
 
-## Log Levels
+## Required Log Fields
 
-<!-- When to use each level: debug, info, warn, error -->
+Every request-scoped log should include:
+- `timestamp`
+- `level`
+- `service`
+- `env`
+- `request_id`
+- `operation`
+- `duration_ms` (when operation finishes)
 
-(To be filled by the team)
+Add when available:
+- `user_id`
+- `kb_id`
+- `doc_id`
+- `session_id`
+- `error_code`
 
 ---
 
-## Structured Logging
+## Level Usage
 
-<!-- Log format, required fields -->
+- `DEBUG`: local diagnosis only; disabled by default in production.
+- `INFO`: lifecycle milestones and key state transitions.
+- `WARN`: recoverable anomalies and degraded behavior.
+- `ERROR`: request or task failure requiring attention.
 
-(To be filled by the team)
+No business-as-usual logs at `ERROR`.
 
 ---
 
 ## What to Log
 
-<!-- Important events to log -->
-
-(To be filled by the team)
+- API entry/exit summary (method, path, status, duration).
+- Indexing task start/finish/fail with identifiers.
+- Retrieval path decisions (bm25/vector/fused) and hit counts.
+- Model gateway provider choice, timeout, retries, fallback.
+- Agent step transitions and tool execution outcome.
 
 ---
 
 ## What NOT to Log
 
-<!-- Sensitive data, PII, secrets -->
+- API keys, tokens, secrets.
+- Raw user documents or full prompts/responses in production logs.
+- PII fields unless explicitly masked and approved.
+- High-cardinality debug payloads on hot paths.
 
-(To be filled by the team)
+---
+
+## Common Mistakes (Forbidden)
+
+- Unstructured string logs with parse-hostile text.
+- Missing request id on error logs.
+- Logging same error in every stack layer (log once at boundary).

@@ -1,51 +1,58 @@
 # Quality Guidelines
 
-> Code quality standards for backend development.
+> Backend quality gate for changes in MemoBase.
 
 ---
 
-## Overview
+## Baseline Tooling
 
-<!--
-Document your project's quality standards here.
+- Formatting: `gofmt` + `goimports`
+- Lint: `golangci-lint`
+- Tests: `go test ./...`
+- Security check (recommended): `gosec ./...`
 
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
-
-(To be filled by the team)
+All CI-critical checks must pass before merge.
 
 ---
 
 ## Forbidden Patterns
 
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
+- Business logic in handlers.
+- Global mutable state without synchronization.
+- Context-free DB/network operations.
+- Silent error ignore (`_ = err` without explicit reason).
+- Hardcoded secrets or environment-dependent constants in code.
+- Cross-module direct calls that bypass service/repository contracts.
 
 ---
 
 ## Required Patterns
 
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
+- Constructor-based dependency injection.
+- Small interfaces at capability boundaries.
+- Explicit timeout/retry policy for external dependencies.
+- Idempotent design for indexing and async job endpoints.
+- Stable API response envelopes and version-safe contracts.
+- Dependency boundary checks: MVP cannot introduce `OpenSearch`, `MinIO`, `Redis`, `Viper`, or `Nginx` without team-approved RFC.
 
 ---
 
 ## Testing Requirements
 
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
+- Unit tests for service logic and error mapping.
+- Repository tests for query correctness (with test DB).
+- Integration tests for MVP critical path:
+  - document upload -> parse/chunk/index
+  - ask question -> hybrid retrieval -> model answer envelope
+- Regression test for every production bug fix.
 
 ---
 
 ## Code Review Checklist
 
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+- Layer boundary respected (`api/app/repo/infra`).
+- Error codes and statuses are consistent.
+- Logs include required context fields.
+- Migrations and rollback path are safe.
+- Contract changes reflected in API docs.
+- Tests cover normal + failure paths.

@@ -1,59 +1,77 @@
 # Component Guidelines
 
-> How components are built in this project.
-
----
-
-## Overview
-
-<!--
-Document your project's component conventions here.
-
-Questions to answer:
-- What component patterns do you use?
-- How are props defined?
-- How do you handle composition?
-- What accessibility standards apply?
--->
-
-(To be filled by the team)
+> Component design standards for React frontend.
 
 ---
 
 ## Component Structure
 
-<!-- Standard structure of a component file -->
+Use function components only.
 
-(To be filled by the team)
+Recommended file layout (for non-trivial components):
+- `ComponentName.tsx`
+- `ComponentName.module.css` (or colocated style file)
+- `ComponentName.test.tsx`
+- `index.ts`
+
+Component responsibilities:
+- Present data.
+- Emit events.
+- Avoid direct data fetching and heavy business logic.
 
 ---
 
 ## Props Conventions
 
-<!-- How props should be defined and typed -->
+- Define explicit `Props` types/interfaces per component.
+- Prefer narrow props over passing whole objects.
+- Use callbacks for actions (`onSubmit`, `onRetry`).
+- Avoid boolean explosion; replace with discriminated union for multi-mode behavior.
 
-(To be filled by the team)
+Example pattern:
+
+```ts
+export type ChatAnswerCardProps = {
+  answer: string;
+  citations: Citation[];
+  isStreaming: boolean;
+  onOpenCitation: (citationId: string) => void;
+};
+```
+
+---
+
+## Composition and Reuse
+
+- Prefer composition over inheritance.
+- Extract reusable UI as shared components only after second clear reuse.
+- Keep feature-specific variants inside feature module until stable.
 
 ---
 
 ## Styling Patterns
 
-<!-- How styles are applied (CSS modules, styled-components, Tailwind, etc.) -->
-
-(To be filled by the team)
+- Default: CSS Modules for component-scoped styles.
+- Global styles only in `src/styles`.
+- Use design tokens via CSS variables (spacing, colors, typography).
+- Inline styles allowed only for runtime-calculated values.
 
 ---
 
 ## Accessibility
 
-<!-- A11y requirements and patterns -->
-
-(To be filled by the team)
+Release-blocking requirements:
+- Semantic HTML first (`button`, `label`, `main`, `nav`).
+- Form controls must have labels and error descriptions.
+- Keyboard navigation must work for all interactive controls.
+- Focus state must be visible.
+- Images/icons need meaningful `alt` or `aria-hidden` when decorative.
 
 ---
 
-## Common Mistakes
+## Common Mistakes (Forbidden)
 
-<!-- Component-related mistakes your team has made -->
-
-(To be filled by the team)
+- Fetching data directly in presentational components.
+- Using `div` as button without keyboard support.
+- Hiding errors and showing only console logs.
+- Unbounded props drilling instead of composing hooks/store.

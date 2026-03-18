@@ -1,54 +1,70 @@
 # Directory Structure
 
-> How frontend code is organized in this project.
+> Frontend project structure for MemoBase.
 
 ---
 
 ## Overview
 
-<!--
-Document your project's frontend directory structure here.
-
-Questions to answer:
-- Where do components live?
-- How are features/modules organized?
-- Where are shared utilities?
-- How are assets organized?
--->
-
-(To be filled by the team)
+Frontend is organized by feature-first modules, with shared layers for reusable UI and infrastructure.
 
 ---
 
-## Directory Layout
+## Standard Layout
 
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
+```text
+frontend/
+├── src/
+│   ├── app/                    # app bootstrap, router, providers
+│   ├── pages/                  # route-level pages (thin composition)
+│   ├── features/               # feature modules (kb, doc, chat, auth, ops)
+│   │   └── <feature>/
+│   │       ├── components/
+│   │       ├── hooks/
+│   │       ├── services/
+│   │       ├── types/
+│   │       └── index.ts
+│   ├── components/             # shared presentational components
+│   ├── hooks/                  # shared generic hooks
+│   ├── lib/                    # api client, utils, constants
+│   ├── stores/                 # global state stores
+│   ├── styles/                 # global styles and tokens
+│   └── test/                   # shared test utilities
+├── public/
+└── vite.config.ts
 ```
 
 ---
 
-## Module Organization
+## Module Boundaries
 
-<!-- How should new features be organized? -->
+- `pages`: compose feature components; avoid direct API logic.
+- `features/*/services`: typed API calls and DTO mapping.
+- `features/*/hooks`: behavior orchestration and side effects.
+- `components`: no feature-specific business dependency.
+- `stores`: global app-level state only.
 
-(To be filled by the team)
+Forbidden boundary violations:
+- page/component making raw HTTP calls directly
+- feature module importing from unrelated feature internals
+- shared components depending on feature stores
 
 ---
 
 ## Naming Conventions
 
-<!-- File and folder naming rules -->
+- Component files: `PascalCase.tsx`
+- Hook files: `useXxx.ts`
+- Service files: `<feature>Api.ts`
+- Type files: `<feature>.types.ts`
+- Utility files: `camelCase.ts`
 
-(To be filled by the team)
+Use explicit barrel files (`index.ts`) per feature for public exports.
 
 ---
 
-## Examples
+## Current Project Anchors
 
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+Use these docs as source of truth until app code is fully scaffolded:
+- `README.md`
+- `doc/模块组织与系统架构说明.md`

@@ -1,12 +1,37 @@
 # Frontend Development Guidelines
 
-> Best practices for frontend development in this project.
+> Execution standards for frontend development in MemoBase.
 
 ---
 
-## Overview
+## Scope
 
-This directory contains guidelines for frontend development. Fill in each file with your project's specific conventions.
+These guidelines define frontend coding standards for the agreed stack.
+
+Fixed by project memory (journal records):
+- UI framework: `React`
+- Language: `TypeScript`
+- Build tool: `Vite`
+
+Not yet fixed at team level (choose during scaffold and keep consistent):
+- Router library
+- HTTP client library
+- Server-state caching library
+- Runtime schema validation library
+
+Constraint:
+- Frontend must stay API-driven and cannot bypass backend service contracts.
+
+Product non-goals in current scope:
+- No mobile-first adaptation priority.
+- No complex multi-role permission UI matrix.
+- No multi-tenant UI architecture.
+- No recommendation-system-oriented feature design.
+
+Source references for current project agreements:
+- `README.md`
+- `doc/模块核心技术栈与任务边界.md`
+- `doc/模块组织与系统架构说明.md`
 
 ---
 
@@ -14,26 +39,30 @@ This directory contains guidelines for frontend development. Fill in each file w
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Component Guidelines](./component-guidelines.md) | Component patterns, props, composition | To fill |
-| [Hook Guidelines](./hook-guidelines.md) | Custom hooks, data fetching patterns | To fill |
-| [State Management](./state-management.md) | Local state, global state, server state | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
+| [Directory Structure](./directory-structure.md) | Feature/module layout and boundaries | Defined |
+| [Component Guidelines](./component-guidelines.md) | Component architecture and a11y | Defined |
+| [Hook Guidelines](./hook-guidelines.md) | Data and reusable logic hooks | Defined |
+| [State Management](./state-management.md) | Local/global/server/url state model | Defined |
+| [Quality Guidelines](./quality-guidelines.md) | Lint/test/review standards | Defined |
+| [Type Safety](./type-safety.md) | Type and runtime validation standards | Defined |
 
 ---
 
-## How to Fill These Guidelines
+## Required Reading Order
 
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
+1. `directory-structure.md`
+2. `component-guidelines.md`
+3. `type-safety.md`
+4. `hook-guidelines.md`
+5. `state-management.md`
+6. `quality-guidelines.md`
 
 ---
 
-**Language**: All documentation should be written in **English**.
+## Core Rules
+
+1. UI components are presentation-first; business orchestration lives in hooks/services.
+2. API contracts are consumed via typed client methods, not ad-hoc fetch calls.
+3. State ownership must be explicit (local vs global vs server vs URL).
+4. Every async UI path has loading, empty, and error states.
+5. Accessibility and type safety are release blockers, not optional polish.

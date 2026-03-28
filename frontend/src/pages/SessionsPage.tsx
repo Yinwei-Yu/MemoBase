@@ -31,11 +31,18 @@ export default function SessionsPage() {
 
   return (
     <section className="page-grid sessions-grid">
+      <header className="page-head">
+        <div>
+          <p className="eyebrow">Conversation Hub</p>
+          <h1>会话管理</h1>
+          <p>集中查看历史会话、消息详情，并可快速清理无效会话记录。</p>
+        </div>
+      </header>
       <div className="card">
         <h2>会话列表</h2>
-        {sessionsQuery.isLoading && <p>加载中...</p>}
+        {sessionsQuery.isLoading && <p className="system-tip">加载中...</p>}
         {sessionsQuery.isError && <div className="error-box">{(sessionsQuery.error as Error).message}</div>}
-        {!sessionsQuery.isLoading && sessionsQuery.data?.items.length === 0 && <p className="muted">暂无会话</p>}
+        {!sessionsQuery.isLoading && sessionsQuery.data?.items.length === 0 && <p className="muted system-tip">暂无会话</p>}
 
         <div className="list">
           {sessionsQuery.data?.items.map((session) => (
@@ -55,8 +62,8 @@ export default function SessionsPage() {
 
       <div className="card">
         <h2>消息</h2>
-        {!selected && <p className="muted">选择一个会话查看消息</p>}
-        {messagesQuery.isLoading && <p>加载中...</p>}
+        {!selected && <p className="muted system-tip">选择一个会话查看消息</p>}
+        {messagesQuery.isLoading && <p className="system-tip">加载中...</p>}
         {messagesQuery.data?.items.map((message) => (
           <div key={message.message_id} className={`msg-item ${message.role}`}>
             <strong>{message.role === 'user' ? '你' : '助手'}：</strong>

@@ -40,9 +40,10 @@ export default function LoginPage() {
 
   return (
     <div className="login-page">
-      <form className="card login-card" onSubmit={onSubmit}>
-        <h1>登录 MemoBase</h1>
-        <p className="muted">MVP 默认账户: demo / demo123</p>
+      <form className="card login-card stack" onSubmit={onSubmit}>
+        <p className="eyebrow">Welcome to KnowledgeAI</p>
+        <h1>登录控制台</h1>
+        <p className="muted system-tip">MVP 默认账户: demo / demo123</p>
         <label>
           用户名
           <input value={username} onChange={(e) => setUsername(e.target.value)} required />

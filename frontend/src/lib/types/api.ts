@@ -47,6 +47,17 @@ export type DocumentItem = {
   updated_at: string;
 };
 
+export type DocumentContent = {
+  doc_id: string;
+  kb_id: string;
+  title: string;
+  file_name: string;
+  status: 'pending' | 'processing' | 'indexed' | 'failed' | 'deleted';
+  content_text: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Task = {
   task_id: string;
   type: string;

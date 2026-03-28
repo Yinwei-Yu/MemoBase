@@ -51,7 +51,14 @@ export default function KnowledgeBasePage() {
   }
 
   return (
-    <section className="page-grid">
+    <section className="page-grid kbs-grid">
+      <header className="page-head">
+        <div>
+          <p className="eyebrow">Knowledge Library</p>
+          <h1>知识库中心</h1>
+          <p>创建、维护并进入你的知识库，统一管理文档资产与问答场景。</p>
+        </div>
+      </header>
       <div className="card">
         <h2>创建知识库</h2>
         <form onSubmit={submit} className="stack">
@@ -84,9 +91,9 @@ export default function KnowledgeBasePage() {
             placeholder="按名称搜索"
           />
         </div>
-        {isLoading && <p>加载中...</p>}
+        {isLoading && <p className="system-tip">加载中...</p>}
         {error && <div className="error-box">{(error as Error).message}</div>}
-        {!isLoading && data?.items.length === 0 && <p className="muted">暂无知识库</p>}
+        {!isLoading && data?.items.length === 0 && <p className="muted system-tip">暂无知识库</p>}
         <div className="list">
           {data?.items.map((kb) => (
             <div key={kb.kb_id} className="list-item">

@@ -5,7 +5,7 @@
 AGENTS.md
 .cursor
 .idea
-
+.trellis/
 # macOS
 .DS_Store
 

@@ -48,10 +48,9 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		Logger: logger,
 		DB:     db,
 		Store:  st,
-		Qdrant: infra.NewQdrantClient(cfg.QdrantURL, cfg.QdrantCollection),
+		Qdrant: infra.NewQdrantClient(cfg.QdrantURL),
 		Ollama: infra.NewOllamaClient(cfg.OllamaURL, cfg.OllamaTimeout),
 	}
-	_ = app.Qdrant.EnsureCollection(ctx, cfg.EmbeddingDim)
 	return app, nil
 }
 
@@ -68,6 +67,24 @@ func (a *App) VerifyUser(ctx context.Context, username, password string) (store.
 		return user, fmt.Errorf("invalid password")
 	}
 	return user, nil
+}
+
+var qdrantCollectionPartRe = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+
+func sanitizeQdrantCollectionPart(part string) string {
+	part = strings.TrimSpace(part)
+	part = qdrantCollectionPartRe.ReplaceAllString(part, "_")
+	part = strings.Trim(part, "_")
+	if part == "" {
+		return "default"
+	}
+	return part
+}
+
+func (a *App) QdrantCollectionForKB(kbID string) string {
+	prefix := sanitizeQdrantCollectionPart(a.Config.QdrantCollection)
+	kbPart := sanitizeQdrantCollectionPart(kbID)
+	return prefix + "__" + kbPart
 }
 
 func splitIntoChunks(text string, chunkSize, overlap int) []string {
@@ -167,13 +184,17 @@ type RetrievedChunk struct {
 	Src   string
 }
 
-func (a *App) RetrieveChunks(ctx context.Context, kbID, query string, topK int) ([]RetrievedChunk, error) {
+func (a *App) RetrieveChunks(ctx context.Context, kbID, query string, topK int) ([]RetrievedChunk, bool, error) {
 	if topK <= 0 {
 		topK = 6
 	}
-	chunks, err := a.Store.GetChunksByKB(ctx, kbID, 500)
+	limit := a.Config.RetrieveLimit
+	if limit <= 0 {
+		limit = 500
+	}
+	chunks, err := a.Store.GetChunksByKB(ctx, kbID, limit)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	bm25Raw := map[string]float64{}
 	for _, c := range chunks {
@@ -181,11 +202,16 @@ func (a *App) RetrieveChunks(ctx context.Context, kbID, query string, topK int) 
 	}
 	bm25Norm := normalizeScores(bm25Raw)
 	vectorNorm := map[string]float64{}
+	degraded := false
 	if emb, err := a.Ollama.Embed(ctx, a.Config.OllamaEmbedModel, query); err == nil {
-		_ = a.Qdrant.EnsureCollection(ctx, len(emb))
-		if vectorRaw, err := a.Qdrant.SearchByKB(ctx, emb, kbID, topK*3); err == nil {
+		collection := a.QdrantCollectionForKB(kbID)
+		if vectorRaw, err := a.Qdrant.Search(ctx, collection, emb, topK*3); err == nil {
 			vectorNorm = normalizeScores(vectorRaw)
+		} else {
+			degraded = true
 		}
+	} else {
+		degraded = true
 	}
 	type scored struct {
 		chunk store.Chunk
@@ -216,7 +242,7 @@ func (a *App) RetrieveChunks(ctx context.Context, kbID, query string, topK int) 
 	for _, x := range all {
 		result = append(result, RetrievedChunk{Chunk: x.chunk, Score: x.score, Src: x.src})
 	}
-	return result, nil
+	return result, degraded, nil
 }
 
 func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, overlap int) {
@@ -252,6 +278,7 @@ func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, o
 	}
 	_ = a.Store.UpdateTask(ctx, taskID, "processing", 60, nil, nil)
 	points := make([]infra.QdrantPoint, 0, len(dbChunks))
+	collection := a.QdrantCollectionForKB(kbID)
 	collectionEnsured := false
 	expectedDim := 0
 	for _, c := range dbChunks {
@@ -261,7 +288,7 @@ func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, o
 			return
 		}
 		if !collectionEnsured {
-			if err := a.Qdrant.EnsureCollection(ctx, len(emb)); err != nil {
+			if err := a.Qdrant.EnsureCollection(ctx, collection, len(emb)); err != nil {
 				a.failTask(ctx, taskID, docID, "QDRANT_COLLECTION_FAILED", err.Error())
 				return
 			}
@@ -285,13 +312,13 @@ func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, o
 			},
 		})
 	}
-	if err := a.Qdrant.DeleteByDoc(ctx, docID); err != nil {
+	if err := a.Qdrant.DeleteByDoc(ctx, collection, docID); err != nil {
 		a.Logger.Warn("qdrant_delete_old_points_failed",
 			slog.String("doc_id", docID),
 			slog.String("error", err.Error()),
 		)
 	}
-	if err := a.Qdrant.Upsert(ctx, points); err != nil {
+	if err := a.Qdrant.Upsert(ctx, collection, points); err != nil {
 		a.failTask(ctx, taskID, docID, "QDRANT_UPSERT_FAILED", err.Error())
 		return
 	}
@@ -308,6 +335,12 @@ func qdrantPointID(chunkID string) string {
 }
 
 func (a *App) failTask(ctx context.Context, taskID, docID, code, msg string) {
+	if err := a.Store.DeleteChunksByDoc(ctx, docID); err != nil {
+		a.Logger.Warn("delete_chunks_failed",
+			slog.String("doc_id", docID),
+			slog.String("error", err.Error()),
+		)
+	}
 	_ = a.Store.UpdateDocumentStatus(ctx, docID, "failed")
 	_ = a.Store.UpdateTask(ctx, taskID, "failed", 100, &code, &msg)
 	a.Logger.Error("document_process_failed",

@@ -13,13 +13,11 @@ import (
 )
 
 type QdrantClient struct {
-	BaseURL    string
-	Collection string
-	Client     *http.Client
+	BaseURL string
+	Client  *http.Client
 
-	ensureMu   sync.Mutex
-	ensured    bool
-	ensureSize int
+	ensureMu    sync.Mutex
+	ensuredSize map[string]int
 }
 
 type QdrantPoint struct {
@@ -34,25 +32,31 @@ type qdrantSearchResult struct {
 	Payload map[string]interface{} `json:"payload"`
 }
 
-func NewQdrantClient(baseURL, collection string) *QdrantClient {
+func NewQdrantClient(baseURL string) *QdrantClient {
 	return &QdrantClient{
-		BaseURL:    baseURL,
-		Collection: collection,
-		Client:     &http.Client{Timeout: 15 * time.Second},
+		BaseURL:     baseURL,
+		Client:      &http.Client{Timeout: 15 * time.Second},
+		ensuredSize: make(map[string]int),
 	}
 }
 
-func (q *QdrantClient) EnsureCollection(ctx context.Context, vectorSize int) error {
+func (q *QdrantClient) EnsureCollection(ctx context.Context, collection string, vectorSize int) error {
+	collection = strings.TrimSpace(collection)
+	if collection == "" {
+		return fmt.Errorf("qdrant collection is required")
+	}
+
 	q.ensureMu.Lock()
-	defer q.ensureMu.Unlock()
-	if q.ensured {
-		if q.ensureSize != vectorSize {
-			return fmt.Errorf("qdrant collection vector size mismatch: ensured=%d requested=%d", q.ensureSize, vectorSize)
+	if ensured, ok := q.ensuredSize[collection]; ok {
+		q.ensureMu.Unlock()
+		if ensured != vectorSize {
+			return fmt.Errorf("qdrant collection vector size mismatch: ensured=%d requested=%d", ensured, vectorSize)
 		}
 		return nil
 	}
+	q.ensureMu.Unlock()
 
-	getURL := fmt.Sprintf("%s/collections/%s", q.BaseURL, q.Collection)
+	getURL := fmt.Sprintf("%s/collections/%s", q.BaseURL, collection)
 	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, getURL, nil)
 	if err != nil {
 		return err
@@ -70,8 +74,9 @@ func (q *QdrantClient) EnsureCollection(ctx context.Context, vectorSize int) err
 		if size > 0 && size != vectorSize {
 			return fmt.Errorf("qdrant collection vector size mismatch: existing=%d requested=%d", size, vectorSize)
 		}
-		q.ensured = true
-		q.ensureSize = vectorSize
+		q.ensureMu.Lock()
+		q.ensuredSize[collection] = vectorSize
+		q.ensureMu.Unlock()
 		return nil
 	}
 	if getResp.StatusCode != http.StatusNotFound {
@@ -85,7 +90,7 @@ func (q *QdrantClient) EnsureCollection(ctx context.Context, vectorSize int) err
 		},
 	}
 	body, _ := json.Marshal(payload)
-	url := fmt.Sprintf("%s/collections/%s", q.BaseURL, q.Collection)
+	url := fmt.Sprintf("%s/collections/%s", q.BaseURL, collection)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -99,15 +104,20 @@ func (q *QdrantClient) EnsureCollection(ctx context.Context, vectorSize int) err
 	if resp.StatusCode >= 400 {
 		return qdrantHTTPError("ensure collection", resp)
 	}
-	q.ensured = true
-	q.ensureSize = vectorSize
+	q.ensureMu.Lock()
+	q.ensuredSize[collection] = vectorSize
+	q.ensureMu.Unlock()
 	return nil
 }
 
-func (q *QdrantClient) Upsert(ctx context.Context, points []QdrantPoint) error {
+func (q *QdrantClient) Upsert(ctx context.Context, collection string, points []QdrantPoint) error {
+	collection = strings.TrimSpace(collection)
+	if collection == "" {
+		return fmt.Errorf("qdrant collection is required")
+	}
 	payload := map[string]interface{}{"points": points}
 	body, _ := json.Marshal(payload)
-	url := fmt.Sprintf("%s/collections/%s/points?wait=true", q.BaseURL, q.Collection)
+	url := fmt.Sprintf("%s/collections/%s/points?wait=true", q.BaseURL, collection)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -124,7 +134,11 @@ func (q *QdrantClient) Upsert(ctx context.Context, points []QdrantPoint) error {
 	return nil
 }
 
-func (q *QdrantClient) DeleteByDoc(ctx context.Context, docID string) error {
+func (q *QdrantClient) DeleteByDoc(ctx context.Context, collection, docID string) error {
+	collection = strings.TrimSpace(collection)
+	if collection == "" {
+		return fmt.Errorf("qdrant collection is required")
+	}
 	payload := map[string]interface{}{
 		"filter": map[string]interface{}{
 			"must": []map[string]interface{}{
@@ -133,7 +147,7 @@ func (q *QdrantClient) DeleteByDoc(ctx context.Context, docID string) error {
 		},
 	}
 	body, _ := json.Marshal(payload)
-	url := fmt.Sprintf("%s/collections/%s/points/delete?wait=true", q.BaseURL, q.Collection)
+	url := fmt.Sprintf("%s/collections/%s/points/delete?wait=true", q.BaseURL, collection)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -150,19 +164,42 @@ func (q *QdrantClient) DeleteByDoc(ctx context.Context, docID string) error {
 	return nil
 }
 
-func (q *QdrantClient) SearchByKB(ctx context.Context, vector []float64, kbID string, limit int) (map[string]float64, error) {
+func (q *QdrantClient) DeleteCollection(ctx context.Context, collection string) error {
+	collection = strings.TrimSpace(collection)
+	if collection == "" {
+		return fmt.Errorf("qdrant collection is required")
+	}
+	url := fmt.Sprintf("%s/collections/%s", q.BaseURL, collection)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := q.Client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound && resp.StatusCode >= 400 {
+		return qdrantHTTPError("delete collection", resp)
+	}
+	q.ensureMu.Lock()
+	delete(q.ensuredSize, collection)
+	q.ensureMu.Unlock()
+	return nil
+}
+
+func (q *QdrantClient) Search(ctx context.Context, collection string, vector []float64, limit int) (map[string]float64, error) {
+	collection = strings.TrimSpace(collection)
+	if collection == "" {
+		return nil, fmt.Errorf("qdrant collection is required")
+	}
 	payload := map[string]interface{}{
 		"vector":       vector,
 		"limit":        limit,
 		"with_payload": true,
-		"filter": map[string]interface{}{
-			"must": []map[string]interface{}{
-				{"key": "kb_id", "match": map[string]interface{}{"value": kbID}},
-			},
-		},
 	}
 	body, _ := json.Marshal(payload)
-	url := fmt.Sprintf("%s/collections/%s/points/search", q.BaseURL, q.Collection)
+	url := fmt.Sprintf("%s/collections/%s/points/search", q.BaseURL, collection)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -173,6 +210,9 @@ func (q *QdrantClient) SearchByKB(ctx context.Context, vector []float64, kbID st
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return map[string]float64{}, nil
+	}
 	if resp.StatusCode >= 400 {
 		return nil, qdrantHTTPError("search", resp)
 	}

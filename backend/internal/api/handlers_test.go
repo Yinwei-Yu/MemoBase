@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -86,6 +87,79 @@ func TestCoreSummary(t *testing.T) {
 	}
 }
 
+func TestValidateKBFields(t *testing.T) {
+	tests := []struct {
+		name        string
+		inName      *string
+		inDesc      *string
+		inTags      *[]string
+		wantErrPart string
+	}{
+		{
+			name:   "valid create payload",
+			inName: strPtr("  test kb  "),
+			inDesc: strPtr("desc"),
+			inTags: tagsPtr([]string{" tag1 ", "tag2", ""}),
+		},
+		{
+			name:        "name too long",
+			inName:      strPtr(strings.Repeat("a", 65)),
+			wantErrPart: "name must be between 1 and 64 characters",
+		},
+		{
+			name:        "description too long",
+			inDesc:      strPtr(strings.Repeat("d", 513)),
+			wantErrPart: "description must be at most 512 characters",
+		},
+		{
+			name:        "too many tags",
+			inTags:      tagsPtr([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"}),
+			wantErrPart: "tags must be at most 10 items",
+		},
+		{
+			name:        "empty name invalid when provided",
+			inName:      strPtr("   "),
+			wantErrPart: "name is required",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateKBFields(tt.inName, tt.inDesc, tt.inTags)
+			if tt.wantErrPart == "" {
+				if err != nil {
+					t.Fatalf("validateKBFields() error = %v; want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErrPart) {
+				t.Fatalf("validateKBFields() error = %v; want contains %q", err, tt.wantErrPart)
+			}
+		})
+	}
+}
+
+func TestClampTopK(t *testing.T) {
+	tests := []struct {
+		in   int
+		want int
+	}{
+		{in: -1, want: 6},
+		{in: 0, want: 6},
+		{in: 1, want: 1},
+		{in: 6, want: 6},
+		{in: 20, want: 20},
+		{in: 99, want: 20},
+	}
+
+	for _, tt := range tests {
+		if got := clampTopK(tt.in); got != tt.want {
+			t.Fatalf("clampTopK(%d) = %d; want %d", tt.in, got, tt.want)
+		}
+	}
+}
+
 func newQueryContext(rawQuery string) *gin.Context {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -93,4 +167,12 @@ func newQueryContext(rawQuery string) *gin.Context {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/test?"+rawQuery, nil)
 	c.Request = req
 	return c
+}
+
+func strPtr(v string) *string {
+	return &v
+}
+
+func tagsPtr(v []string) *[]string {
+	return &v
 }

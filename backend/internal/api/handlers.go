@@ -3,11 +3,14 @@ package api
 import (
 	"context"
 	"fmt"
+	"mime/multipart"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"memobase/backend/internal/core"
 	"memobase/backend/internal/infra"
@@ -20,6 +23,25 @@ import (
 var supportedUploadExt = map[string]struct{}{
 	".txt": {},
 	".md":  {},
+}
+
+const (
+	maxUploadFileSize  = 20 * 1024 * 1024
+	maxUploadFileCount = 20
+)
+
+type uploadDocumentItem struct {
+	DocID     string    `json:"doc_id"`
+	KBID      string    `json:"kb_id"`
+	FileName  string    `json:"file_name"`
+	Status    string    `json:"status"`
+	TaskID    string    `json:"task_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type uploadDocumentsResponse struct {
+	Items         []uploadDocumentItem `json:"items"`
+	UploadedCount int                  `json:"uploaded_count"`
 }
 
 func isSupportedUploadExt(ext string) bool {
@@ -50,6 +72,56 @@ func userIDFrom(c *gin.Context) string {
 	uid, _ := c.Get("user_id")
 	s, _ := uid.(string)
 	return s
+}
+
+func trimAndFilterTags(tags []string) []string {
+	out := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		out = append(out, tag)
+	}
+	return out
+}
+
+func validateKBFields(name, description *string, tags *[]string) error {
+	if name != nil {
+		trimmed := strings.TrimSpace(*name)
+		if trimmed == "" {
+			return fmt.Errorf("name is required")
+		}
+		if utf8.RuneCountInString(trimmed) > 64 {
+			return fmt.Errorf("name must be between 1 and 64 characters")
+		}
+		*name = trimmed
+	}
+	if description != nil {
+		trimmed := strings.TrimSpace(*description)
+		if utf8.RuneCountInString(trimmed) > 512 {
+			return fmt.Errorf("description must be at most 512 characters")
+		}
+		*description = trimmed
+	}
+	if tags != nil {
+		filtered := trimAndFilterTags(*tags)
+		if len(filtered) > 10 {
+			return fmt.Errorf("tags must be at most 10 items")
+		}
+		*tags = filtered
+	}
+	return nil
+}
+
+func clampTopK(v int) int {
+	if v <= 0 {
+		return 6
+	}
+	if v > 20 {
+		return 20
+	}
+	return v
 }
 
 func RegisterRoutes(r *gin.Engine, app *core.App) {
@@ -154,11 +226,14 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "invalid payload", nil)
 			return
 		}
-		if strings.TrimSpace(req.Name) == "" {
-			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "name is required", nil)
+		name := req.Name
+		description := req.Description
+		tags := req.Tags
+		if err := validateKBFields(&name, &description, &tags); err != nil {
+			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", err.Error(), nil)
 			return
 		}
-		kb, err := app.Store.CreateKB(c.Request.Context(), userIDFrom(c), req.Name, req.Description, req.Tags)
+		kb, err := app.Store.CreateKB(c.Request.Context(), userIDFrom(c), name, description, tags)
 		if err != nil {
 			util.Internal(c, "failed to create knowledge base")
 			return
@@ -194,16 +269,28 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 
 	authed.PATCH("/knowledge-bases/:kb_id", func(c *gin.Context) {
 		var req struct {
-			Name        string   `json:"name"`
-			Description string   `json:"description"`
-			Tags        []string `json:"tags"`
+			Name        *string   `json:"name"`
+			Description *string   `json:"description"`
+			Tags        *[]string `json:"tags"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "invalid payload", nil)
 			return
 		}
-		kb, err := app.Store.UpdateKB(c.Request.Context(), c.Param("kb_id"), req.Name, req.Description, req.Tags)
+		if req.Name == nil && req.Description == nil && req.Tags == nil {
+			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "at least one field is required", nil)
+			return
+		}
+		if err := validateKBFields(req.Name, req.Description, req.Tags); err != nil {
+			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", err.Error(), nil)
+			return
+		}
+		kb, err := app.Store.PatchKB(c.Request.Context(), c.Param("kb_id"), req.Name, req.Description, req.Tags)
 		if err != nil {
+			if store.IsNotFound(err) {
+				util.Fail(c, http.StatusNotFound, "KB_NOT_FOUND", "knowledge base not found", nil)
+				return
+			}
 			util.Internal(c, "failed to update knowledge base")
 			return
 		}
@@ -211,10 +298,12 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 	})
 
 	authed.DELETE("/knowledge-bases/:kb_id", func(c *gin.Context) {
-		if err := app.Store.DeleteKB(c.Request.Context(), c.Param("kb_id")); err != nil {
+		kbID := c.Param("kb_id")
+		if err := app.Store.DeleteKB(c.Request.Context(), kbID); err != nil {
 			util.Internal(c, "failed to delete knowledge base")
 			return
 		}
+		_ = app.Qdrant.DeleteCollection(c.Request.Context(), app.QdrantCollectionForKB(kbID))
 		util.Success(c, http.StatusOK, gin.H{"deleted": true})
 	})
 
@@ -224,24 +313,36 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			util.Fail(c, http.StatusNotFound, "KB_NOT_FOUND", "knowledge base not found", nil)
 			return
 		}
-		fileHeader, err := c.FormFile("file")
+		form, err := c.MultipartForm()
 		if err != nil {
 			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "file is required", nil)
 			return
 		}
-		if fileHeader.Size > 20*1024*1024 {
-			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "file too large (max 20MB)", nil)
+
+		fileHeaders := make([]*multipart.FileHeader, 0, len(form.File["files"])+len(form.File["file"]))
+		fileHeaders = append(fileHeaders, form.File["files"]...)
+		fileHeaders = append(fileHeaders, form.File["file"]...)
+		if len(fileHeaders) == 0 {
+			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "at least one file is required", nil)
 			return
 		}
-		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
-		if !isSupportedUploadExt(ext) {
-			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "unsupported file type: only .txt and .md are currently supported", nil)
+		if len(fileHeaders) > maxUploadFileCount {
+			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", fmt.Sprintf("too many files (max %d)", maxUploadFileCount), nil)
 			return
 		}
-		title := c.PostForm("title")
-		if strings.TrimSpace(title) == "" {
-			title = fileHeader.Filename
+		for _, fileHeader := range fileHeaders {
+			if fileHeader.Size > maxUploadFileSize {
+				util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "file too large (max 20MB each)", nil)
+				return
+			}
+			ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+			if !isSupportedUploadExt(ext) {
+				util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "unsupported file type: only .txt and .md are currently supported", nil)
+				return
+			}
 		}
+
+		title := strings.TrimSpace(c.PostForm("title"))
 		chunkSize, _ := strconv.Atoi(c.DefaultPostForm("chunk_size", "500"))
 		overlap, _ := strconv.Atoi(c.DefaultPostForm("chunk_overlap", "100"))
 		if chunkSize < 200 || chunkSize > 1200 {
@@ -252,35 +353,56 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "chunk_overlap must be between 0 and 300", nil)
 			return
 		}
-		file, err := fileHeader.Open()
-		if err != nil {
-			util.Internal(c, "failed to open uploaded file")
-			return
+		items := make([]uploadDocumentItem, 0, len(fileHeaders))
+		for _, fileHeader := range fileHeaders {
+			docTitle := title
+			if docTitle == "" || len(fileHeaders) > 1 {
+				docTitle = fileHeader.Filename
+			}
+
+			file, err := fileHeader.Open()
+			if err != nil {
+				util.Internal(c, "failed to open uploaded file")
+				return
+			}
+
+			doc, err := app.Store.CreateDocument(c.Request.Context(), kbID, docTitle, fileHeader.Filename)
+			if err != nil {
+				_ = file.Close()
+				util.Internal(c, "failed to create document")
+				return
+			}
+
+			path, err := core.SaveUploadedFile(app.Config.StorageDir, kbID, doc.ID, fileHeader.Filename, file)
+			_ = file.Close()
+			if err != nil {
+				_ = app.Store.DeleteDocument(c.Request.Context(), kbID, doc.ID)
+				util.Internal(c, "failed to save uploaded file")
+				return
+			}
+
+			task, err := app.Store.CreateTask(c.Request.Context(), "document_index", map[string]interface{}{"doc_id": doc.ID, "kb_id": kbID})
+			if err != nil {
+				_ = os.Remove(path)
+				_ = app.Store.DeleteDocument(c.Request.Context(), kbID, doc.ID)
+				util.Internal(c, "failed to create task")
+				return
+			}
+
+			go app.ProcessDocument(task.ID, kbID, doc.ID, path, chunkSize, overlap)
+			items = append(items, uploadDocumentItem{
+				DocID:     doc.ID,
+				KBID:      kbID,
+				FileName:  doc.FileName,
+				Status:    doc.Status,
+				TaskID:    task.ID,
+				CreatedAt: doc.CreatedAt,
+			})
 		}
-		defer file.Close()
-		doc, err := app.Store.CreateDocument(c.Request.Context(), kbID, title, fileHeader.Filename)
-		if err != nil {
-			util.Internal(c, "failed to create document")
-			return
-		}
-		path, err := core.SaveUploadedFile(app.Config.StorageDir, kbID, doc.ID, fileHeader.Filename, file)
-		if err != nil {
-			util.Internal(c, "failed to save uploaded file")
-			return
-		}
-		task, err := app.Store.CreateTask(c.Request.Context(), "document_index", map[string]interface{}{"doc_id": doc.ID, "kb_id": kbID})
-		if err != nil {
-			util.Internal(c, "failed to create task")
-			return
-		}
-		go app.ProcessDocument(task.ID, kbID, doc.ID, path, chunkSize, overlap)
-		util.Success(c, http.StatusCreated, gin.H{
-			"doc_id":     doc.ID,
-			"kb_id":      kbID,
-			"file_name":  doc.FileName,
-			"status":     doc.Status,
-			"task_id":    task.ID,
-			"created_at": doc.CreatedAt,
+
+		util.Success(c, http.StatusCreated, uploadDocumentsResponse{
+			Items:         items,
+			UploadedCount: len(items),
 		})
 	})
 
@@ -307,12 +429,27 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 		util.Success(c, http.StatusOK, doc)
 	})
 
+	authed.GET("/knowledge-bases/:kb_id/documents/:doc_id/content", func(c *gin.Context) {
+		doc, err := app.Store.GetDocumentContent(c.Request.Context(), c.Param("kb_id"), c.Param("doc_id"))
+		if err != nil {
+			if store.IsNotFound(err) {
+				util.Fail(c, http.StatusNotFound, "DOC_NOT_FOUND", "document not found", nil)
+				return
+			}
+			util.Internal(c, "failed to get document content")
+			return
+		}
+		util.Success(c, http.StatusOK, doc)
+	})
+
 	authed.DELETE("/knowledge-bases/:kb_id/documents/:doc_id", func(c *gin.Context) {
-		if err := app.Store.DeleteDocument(c.Request.Context(), c.Param("kb_id"), c.Param("doc_id")); err != nil {
+		kbID := c.Param("kb_id")
+		docID := c.Param("doc_id")
+		if err := app.Store.DeleteDocument(c.Request.Context(), kbID, docID); err != nil {
 			util.Internal(c, "failed to delete document")
 			return
 		}
-		_ = app.Qdrant.DeleteByDoc(c.Request.Context(), c.Param("doc_id"))
+		_ = app.Qdrant.DeleteByDoc(c.Request.Context(), app.QdrantCollectionForKB(kbID), docID)
 		util.Success(c, http.StatusOK, gin.H{"deleted": true})
 	})
 
@@ -408,6 +545,7 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 	})
 
 	authed.POST("/chat/completions", func(c *gin.Context) {
+		startedAt := time.Now()
 		var req struct {
 			KBID         string `json:"kb_id"`
 			SessionID    string `json:"session_id"`
@@ -421,35 +559,51 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "invalid payload", nil)
 			return
 		}
-		if strings.TrimSpace(req.KBID) == "" || strings.TrimSpace(req.Question) == "" {
+		question := strings.TrimSpace(req.Question)
+		if strings.TrimSpace(req.KBID) == "" || question == "" {
 			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "kb_id and question are required", nil)
+			return
+		}
+		if utf8.RuneCountInString(question) > 2000 {
+			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "question must be between 1 and 2000 characters", nil)
 			return
 		}
 		model := req.Model
 		if model == "" {
 			model = app.Config.OllamaChatModel
 		}
-		topK := req.TopK
-		if topK <= 0 {
-			topK = 6
-		}
+		topK := clampTopK(req.TopK)
 
 		sessionID := req.SessionID
 		if strings.TrimSpace(sessionID) == "" {
-			s, err := app.Store.CreateSession(c.Request.Context(), req.KBID, "会话: "+coreSummary(req.Question, 12))
+			s, err := app.Store.CreateSession(c.Request.Context(), req.KBID, "会话: "+coreSummary(question, 12))
 			if err != nil {
 				util.Internal(c, "failed to create session")
 				return
 			}
 			sessionID = s.ID
+		} else {
+			s, err := app.Store.GetSession(c.Request.Context(), sessionID)
+			if err != nil {
+				if store.IsNotFound(err) {
+					util.Fail(c, http.StatusNotFound, "SESSION_NOT_FOUND", "session not found", nil)
+					return
+				}
+				util.Internal(c, "failed to get session")
+				return
+			}
+			if s.KBID != req.KBID {
+				util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "session_id does not belong to kb_id", nil)
+				return
+			}
 		}
 
-		if _, err := app.Store.CreateMessage(c.Request.Context(), sessionID, "user", req.Question); err != nil {
+		if _, err := app.Store.CreateMessage(c.Request.Context(), sessionID, "user", question); err != nil {
 			util.Internal(c, "failed to write user message")
 			return
 		}
 
-		chunks, err := app.RetrieveChunks(c.Request.Context(), req.KBID, req.Question, topK)
+		chunks, retrievalDegraded, err := app.RetrieveChunks(c.Request.Context(), req.KBID, question, topK)
 		if err != nil {
 			app.Logger.Error("retrieval_failed",
 				"request_id", util.RequestID(c),
@@ -460,8 +614,9 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			util.Fail(c, http.StatusServiceUnavailable, "QDRANT_UNAVAILABLE", "retrieval failed", nil)
 			return
 		}
+		degraded := retrievalDegraded
 		memories, _ := app.Store.ListSessionMemories(c.Request.Context(), sessionID, 5)
-		prompt := app.BuildChatPrompt(req.Question, chunks, memories)
+		prompt := app.BuildChatPrompt(question, chunks, memories)
 		answer, promptT, completionT, err := app.Ollama.Chat(c.Request.Context(), model, prompt)
 		if err != nil {
 			app.Logger.Error("model_chat_failed",
@@ -478,7 +633,7 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			util.Internal(c, "failed to write assistant message")
 			return
 		}
-		_, _ = app.Store.CreateMemory(c.Request.Context(), sessionID, "short_term", "Q: "+coreSummary(req.Question, 80)+" | A: "+coreSummary(answer, 120))
+		_, _ = app.Store.CreateMemory(c.Request.Context(), sessionID, "short_term", "Q: "+coreSummary(question, 80)+" | A: "+coreSummary(answer, 120))
 
 		citations := make([]core.Citation, 0, len(chunks))
 		for _, ch := range chunks {
@@ -498,11 +653,13 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			steps := []map[string]interface{}{
 				{"tool": "search_knowledge", "input": gin.H{"kb_id": req.KBID, "top_k": topK}, "observation": fmt.Sprintf("%d chunks", len(chunks)), "latency_ms": 50},
 				{"tool": "search_memory", "input": gin.H{"session_id": sessionID}, "observation": fmt.Sprintf("%d memories", len(memories)), "latency_ms": 15},
-				{"tool": "summarize_context", "input": gin.H{"question": req.Question}, "observation": "context packed", "latency_ms": 22},
+				{"tool": "summarize_context", "input": gin.H{"question": question}, "observation": "context packed", "latency_ms": 22},
 			}
 			trace, err := app.Store.CreateTrace(c.Request.Context(), sessionID, steps)
 			if err == nil {
 				traceID = trace.ID
+			} else {
+				degraded = true
 			}
 		}
 
@@ -512,8 +669,8 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			"citations":   citations,
 			"memory_used": memories,
 			"trace_id":    traceID,
-			"degraded":    false,
-			"latency_ms":  0,
+			"degraded":    degraded,
+			"latency_ms":  time.Since(startedAt).Milliseconds(),
 			"token_usage": core.TokenUsage{PromptTokens: promptT, CompletionTokens: completionT, TotalTokens: promptT + completionT},
 		})
 	})

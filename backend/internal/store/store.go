@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,6 +49,17 @@ type Document struct {
 	Status    string    `db:"status" json:"status"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+type DocumentContent struct {
+	ID          string    `db:"id" json:"doc_id"`
+	KBID        string    `db:"kb_id" json:"kb_id"`
+	Title       string    `db:"title" json:"title"`
+	FileName    string    `db:"file_name" json:"file_name"`
+	Status      string    `db:"status" json:"status"`
+	ContentText string    `db:"content_text" json:"content_text"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
 }
 
 type Chunk struct {
@@ -190,15 +203,45 @@ func (s *Store) GetKB(ctx context.Context, kbID string) (KnowledgeBase, error) {
 	return kb, nil
 }
 
-func (s *Store) UpdateKB(ctx context.Context, kbID, name, description string, tags []string) (KnowledgeBase, error) {
-	tagsRaw, _ := json.Marshal(tags)
-	_, err := s.DB.ExecContext(ctx, `
+func (s *Store) PatchKB(ctx context.Context, kbID string, name, description *string, tags *[]string) (KnowledgeBase, error) {
+	sets := make([]string, 0, 4)
+	args := make([]interface{}, 0, 4)
+	args = append(args, kbID)
+	argPos := 2
+
+	if name != nil {
+		sets = append(sets, fmt.Sprintf("name=$%d", argPos))
+		args = append(args, *name)
+		argPos++
+	}
+	if description != nil {
+		sets = append(sets, fmt.Sprintf("description=$%d", argPos))
+		args = append(args, *description)
+		argPos++
+	}
+	if tags != nil {
+		tagsRaw, _ := json.Marshal(*tags)
+		sets = append(sets, fmt.Sprintf("tags=$%d", argPos))
+		args = append(args, tagsRaw)
+		argPos++
+	}
+	if len(sets) == 0 {
+		return s.GetKB(ctx, kbID)
+	}
+	sets = append(sets, "updated_at=NOW()")
+
+	query := fmt.Sprintf(`
 		UPDATE knowledge_bases
-		SET name=$2, description=$3, tags=$4, updated_at=NOW()
+		SET %s
 		WHERE id=$1 AND deleted_at IS NULL
-	`, kbID, name, description, tagsRaw)
+	`, strings.Join(sets, ", "))
+	res, err := s.DB.ExecContext(ctx, query, args...)
 	if err != nil {
 		return KnowledgeBase{}, err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return KnowledgeBase{}, sql.ErrNoRows
 	}
 	return s.GetKB(ctx, kbID)
 }
@@ -234,6 +277,15 @@ func (s *Store) GetDocument(ctx context.Context, kbID, docID string) (Document, 
 	var doc Document
 	err := s.DB.GetContext(ctx, &doc, `
 		SELECT id, kb_id, title, file_name, status, created_at, updated_at
+		FROM documents WHERE id=$1 AND kb_id=$2 AND deleted_at IS NULL
+	`, docID, kbID)
+	return doc, err
+}
+
+func (s *Store) GetDocumentContent(ctx context.Context, kbID, docID string) (DocumentContent, error) {
+	var doc DocumentContent
+	err := s.DB.GetContext(ctx, &doc, `
+		SELECT id, kb_id, title, file_name, status, content_text, created_at, updated_at
 		FROM documents WHERE id=$1 AND kb_id=$2 AND deleted_at IS NULL
 	`, docID, kbID)
 	return doc, err
@@ -309,13 +361,19 @@ func (s *Store) ReplaceChunks(ctx context.Context, docID string, chunks []Chunk)
 	return tx.Commit()
 }
 
+func (s *Store) DeleteChunksByDoc(ctx context.Context, docID string) error {
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM document_chunks WHERE doc_id=$1`, docID)
+	return err
+}
+
 func (s *Store) GetChunksByKB(ctx context.Context, kbID string, limit int) ([]Chunk, error) {
 	chunks := []Chunk{}
 	err := s.DB.SelectContext(ctx, &chunks, `
-		SELECT id, doc_id, kb_id, chunk_index, content, created_at
-		FROM document_chunks
-		WHERE kb_id=$1
-		ORDER BY created_at DESC
+		SELECT c.id, c.doc_id, c.kb_id, c.chunk_index, c.content, c.created_at
+		FROM document_chunks c
+		INNER JOIN documents d ON d.id = c.doc_id
+		WHERE c.kb_id=$1 AND d.status='indexed' AND d.deleted_at IS NULL
+		ORDER BY c.created_at DESC
 		LIMIT $2
 	`, kbID, limit)
 	return chunks, err

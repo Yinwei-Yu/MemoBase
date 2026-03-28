@@ -16,6 +16,7 @@ AGENTS.md
 *.swp
 
 # target files and build artifacts
+server
 target/
 build/
 bin/

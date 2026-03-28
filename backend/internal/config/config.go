@@ -23,6 +23,7 @@ type Config struct {
 	OllamaTimeout    time.Duration
 	BM25Weight       float64
 	VectorWeight     float64
+	RetrieveLimit    int
 }
 
 func Load() Config {
@@ -43,6 +44,7 @@ func Load() Config {
 		OllamaTimeout:    time.Duration(getInt("OLLAMA_TIMEOUT_SEC", 90)) * time.Second,
 		BM25Weight:       getFloat("BM25_WEIGHT", 0.5),
 		VectorWeight:     getFloat("VECTOR_WEIGHT", 0.5),
+		RetrieveLimit:    getInt("RETRIEVAL_DB_CANDIDATE_LIMIT", 5000),
 	}
 }
 

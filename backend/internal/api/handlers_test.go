@@ -160,6 +160,40 @@ func TestClampTopK(t *testing.T) {
 	}
 }
 
+func TestTrimAndFilterTags(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{
+			name: "trim and drop empty",
+			in:   []string{" tag1 ", "", "  ", "tag2"},
+			want: []string{"tag1", "tag2"},
+		},
+		{
+			name: "keep order",
+			in:   []string{"b", "a", "c"},
+			want: []string{"b", "a", "c"},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			got := trimAndFilterTags(tt.in)
+			if len(got) != len(tt.want) {
+				t.Fatalf("len(trimAndFilterTags()) = %d; want %d", len(got), len(tt.want))
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("trimAndFilterTags()[%d] = %q; want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 func newQueryContext(rawQuery string) *gin.Context {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

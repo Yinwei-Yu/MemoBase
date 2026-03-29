@@ -5,7 +5,7 @@
 AGENTS.md
 .cursor
 .idea
-
+.trellis/
 # macOS
 .DS_Store
 
@@ -16,6 +16,15 @@ AGENTS.md
 *.swp
 
 # target files and build artifacts
+.cache/
+server
 target/
 build/
 bin/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/memobase-server
+backend/storage/
+.env
+qdrant_storage/

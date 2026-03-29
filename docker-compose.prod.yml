@@ -1,0 +1,35 @@
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    ports: []
+
+  qdrant:
+    ports: []
+
+  ollama:
+    ports: []
+
+  backend:
+    environment:
+      APP_ENV: production
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ENABLE_DEMO_USER: "false"
+      TOKEN_TTL_HOURS: ${TOKEN_TTL_HOURS:-12}
+      DATABASE_URL: postgres://memo:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/memo?sslmode=disable
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1024M
+
+  frontend:
+    build:
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8080/api/v1}
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M

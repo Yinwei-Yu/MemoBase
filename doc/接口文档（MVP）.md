@@ -1,81 +1,152 @@
-# 知忆（MemoBase）接口文档（MVP）
+# 知忆（MemoBase）前后端 API 规范（MVP）
 
-## 1. 文档范围
+## 1. 目的与边界
 
-本接口文档依据《[模块组织与系统架构说明](./模块组织与系统架构说明.md)》中的架构图编写，覆盖：
+本文档定义前后端联调所使用的 HTTP API 规范，目标是让前端与后端在并行开发时基于同一契约实现。
 
-- 前端可直接调用的 `HTTP API`（Auth / KB / Doc / Chat / Session / Health）
-- 后端内部服务契约（Hybrid Retrieval / Memory / Agent / Model Gateway / Document Processing）
-- MVP 主链路：`上传 -> 建索引 -> 提问 -> 返回答案+引用+轨迹`
+固定技术边界（来自当前项目已确认决策）：
+- 后端：`Go + Gin`
+- 前端：`React + TypeScript + Vite`
+- 存储：`PostgreSQL + 本地文件存储`
+- 检索：`BM25 + Qdrant`（中文分词基线：`jieba`）
+- 模型：外部模型 API + 本地 `Ollama`
+- 编排：轻量 `ReAct`
+
+MVP 禁止引入（除非团队批准 RFC）：
+- `OpenSearch`
+- `MinIO`
+- `Redis`
+- `Viper`
+- `Nginx`
 
 ---
 
-## 2. 通用约定
+## 2. 全局协议
 
-### 2.1 基础信息
+### 2.1 Base URL 与版本
 
 - Base URL：`/api/v1`
-- 数据格式：`application/json`
-- 时间格式：`ISO 8601`（UTC），示例：`2026-03-13T08:30:00Z`
-- 鉴权方式：`Bearer JWT`
+- 版本策略：
+  - 非破坏性变更：仅新增字段
+  - 破坏性变更：发布 `/api/v2`
 
-### 2.2 通用请求头
+### 2.2 数据与命名约定
+
+- Content-Type：`application/json`（文件上传除外）
+- 字段命名：`snake_case`
+- 时间格式：`ISO 8601 UTC`（例：`2026-03-18T12:00:00Z`）
+- ID 类型：字符串（建议前缀：`kb_`、`doc_`、`sess_`、`task_`、`trace_`）
+
+### 2.3 鉴权与请求头
 
 | Header | 必填 | 说明 |
 |---|---|---|
-| `Authorization` | 是（除登录/健康检查外） | `Bearer <token>` |
-| `Content-Type` | 是（JSON 接口） | `application/json` |
-| `X-Request-Id` | 否 | 客户端请求追踪 ID |
+| `Authorization` | 除登录外必填 | `Bearer <access_token>` |
+| `Content-Type` | JSON 接口必填 | `application/json` |
+| `X-Request-Id` | 可选（建议） | 客户端请求 ID，用于链路排障 |
+| `Idempotency-Key` | 幂等写接口建议 | 防止重试重复提交 |
 
-### 2.3 统一响应结构
+### 2.4 统一响应结构
+
+成功：
 
 ```json
 {
-  "code": "OK",
-  "message": "success",
   "data": {},
-  "request_id": "req_01HV....",
-  "timestamp": "2026-03-13T08:30:00Z"
+  "request_id": "req_01H...",
+  "timestamp": "2026-03-18T12:00:00Z"
 }
 ```
 
-失败示例：
+失败：
 
 ```json
 {
-  "code": "VALIDATION_ERROR",
-  "message": "kb_id is required",
-  "data": null,
-  "request_id": "req_01HV....",
-  "timestamp": "2026-03-13T08:30:00Z"
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "question is required",
+    "details": {
+      "field": "question"
+    }
+  },
+  "request_id": "req_01H...",
+  "timestamp": "2026-03-18T12:00:00Z"
 }
 ```
 
-### 2.4 统一错误码
+### 2.5 错误码与 HTTP 映射
 
 | code | HTTP | 说明 |
 |---|---|---|
-| `OK` | 200 | 成功 |
-| `BAD_REQUEST` | 400 | 参数错误 |
+| `INVALID_ARGUMENT` | 400 | 参数格式错误 |
 | `UNAUTHORIZED` | 401 | 未登录或 token 无效 |
-| `FORBIDDEN` | 403 | 无权限访问资源 |
-| `NOT_FOUND` | 404 | 资源不存在 |
-| `CONFLICT` | 409 | 资源冲突（重名、状态冲突） |
-| `VALIDATION_ERROR` | 422 | 字段校验失败 |
-| `RATE_LIMITED` | 429 | 请求频率过高 |
-| `INTERNAL_ERROR` | 500 | 服务内部错误 |
-| `UPSTREAM_ERROR` | 502 | 模型或外部依赖异常 |
-| `SERVICE_UNAVAILABLE` | 503 | 服务暂不可用 |
+| `FORBIDDEN` | 403 | 无权限 |
+| `KB_NOT_FOUND` / `DOC_NOT_FOUND` / `SESSION_NOT_FOUND` | 404 | 资源不存在 |
+| `CONFLICT` | 409 | 状态冲突或重复资源 |
+| `VALIDATION_ERROR` | 422 | 业务字段校验失败 |
+| `RATE_LIMITED` | 429 | 请求频率受限 |
+| `QDRANT_UNAVAILABLE` | 503 | 向量检索不可用 |
+| `MODEL_UNAVAILABLE` | 503 | 模型依赖不可用 |
+| `UPSTREAM_TIMEOUT` | 504 | 外部依赖超时 |
+| `INTERNAL` | 500 | 内部错误 |
 
 ---
 
-## 3. 外部 HTTP API（前后端联调）
+## 3. 通用设计规则
 
-## 3.1 Auth API
+### 3.1 分页协议
 
-### 3.1.1 登录
+查询参数：
+- `page`（从 1 开始）
+- `page_size`（默认 20，最大 100）
 
-- `POST /auth/login`
+分页响应：
+
+```json
+{
+  "data": {
+    "items": [],
+    "pagination": {
+      "page": 1,
+      "page_size": 20,
+      "total": 132
+    }
+  },
+  "request_id": "req_...",
+  "timestamp": "2026-03-18T12:00:00Z"
+}
+```
+
+### 3.2 排序与过滤
+
+- 排序：`sort_by` + `sort_order=asc|desc`
+- 过滤：统一使用 query 参数，不在 body 中混用
+
+### 3.3 幂等与重试
+
+以下接口建议支持 `Idempotency-Key`：
+- 创建知识库
+- 上传文档
+- 触发重建索引
+
+服务端应在幂等窗口内返回同一语义结果，避免重复任务。
+
+### 3.4 长任务协议
+
+所有长耗时操作（文档解析/建索引/重建索引）走任务化：
+- 提交接口返回 `task_id`
+- 通过任务查询接口轮询状态
+
+任务状态流转：
+- `pending -> processing -> succeeded | failed`
+
+---
+
+## 4. 外部 HTTP API（前后端联调）
+
+## 4.1 Auth
+
+### POST `/auth/login`
 
 请求：
 
@@ -86,7 +157,7 @@
 }
 ```
 
-返回 `data`：
+响应 `data`：
 
 ```json
 {
@@ -101,25 +172,19 @@
 }
 ```
 
-### 3.1.2 刷新 Token
+### POST `/auth/refresh`
 
-- `POST /auth/refresh`
+请求：`{ "refresh_token": "..." }`
 
-### 3.1.3 退出登录
+### POST `/auth/logout`
 
-- `POST /auth/logout`
-
-### 3.1.4 获取当前用户
-
-- `GET /auth/me`
+### GET `/auth/me`
 
 ---
 
-## 3.2 Knowledge Base API
+## 4.2 Knowledge Base
 
-### 3.2.1 创建知识库
-
-- `POST /knowledge-bases`
+### POST `/knowledge-bases`
 
 请求：
 
@@ -131,92 +196,132 @@
 }
 ```
 
-返回 `data`：
+字段约束：
+- `name`：1-64 字符
+- `description`：0-512 字符
+- `tags`：最多 10 个
 
-```json
-{
-  "kb_id": "kb_001",
-  "name": "操作系统期末复习",
-  "description": "课程资料与历年题",
-  "tags": ["OS", "exam"],
-  "doc_count": 0,
-  "created_at": "2026-03-13T08:30:00Z"
-}
-```
+### GET `/knowledge-bases?page=1&page_size=20&keyword=`
 
-### 3.2.2 知识库列表
+### GET `/knowledge-bases/{kb_id}`
 
-- `GET /knowledge-bases?page=1&page_size=20&keyword=`
+### PATCH `/knowledge-bases/{kb_id}`
 
-### 3.2.3 知识库详情
-
-- `GET /knowledge-bases/{kb_id}`
-
-### 3.2.4 更新知识库
-
-- `PATCH /knowledge-bases/{kb_id}`
-
-### 3.2.5 删除知识库
-
-- `DELETE /knowledge-bases/{kb_id}`
+### DELETE `/knowledge-bases/{kb_id}`
 
 ---
 
-## 3.3 Document API
+## 4.3 Document
 
-### 3.3.1 上传文档
+### POST `/knowledge-bases/{kb_id}/documents`
 
-- `POST /knowledge-bases/{kb_id}/documents`
-- `Content-Type: multipart/form-data`
+- Content-Type：`multipart/form-data`
+- 当前解析能力：仅支持文本文件（`.txt/.md`）
 
 表单字段：
 
-| 字段 | 必填 | 说明 |
+| 字段 | 必填 | 约束 |
 |---|---|---|
-| `file` | 是 | 支持 `pdf/docx/txt/md` |
-| `title` | 否 | 文档标题（默认文件名） |
-| `chunk_size` | 否 | 切片大小，默认 500 |
-| `chunk_overlap` | 否 | 切片重叠，默认 100 |
-| `reindex` | 否 | 是否立即构建索引，默认 true |
+| `file` | 是 | `txt/md`，<= 20MB |
+| `title` | 否 | 1-128 字符 |
+| `chunk_size` | 否 | 200-1200，默认 500 |
+| `chunk_overlap` | 否 | 0-300，默认 100 |
+| `reindex` | 否 | 默认 `true` |
 
-返回 `data`：
+响应 `data`：
 
 ```json
 {
   "doc_id": "doc_001",
   "kb_id": "kb_001",
-  "file_name": "os-notes.pdf",
   "status": "pending",
   "task_id": "task_001",
-  "created_at": "2026-03-13T08:30:00Z"
+  "created_at": "2026-03-18T12:00:00Z"
 }
 ```
 
-### 3.3.2 文档列表
-
-- `GET /knowledge-bases/{kb_id}/documents?page=1&page_size=20&status=`
+### GET `/knowledge-bases/{kb_id}/documents?page=1&page_size=20&status=`
 
 `status`：`pending | processing | indexed | failed`
 
-### 3.3.3 文档详情
+### GET `/knowledge-bases/{kb_id}/documents/{doc_id}`
 
-- `GET /knowledge-bases/{kb_id}/documents/{doc_id}`
+### DELETE `/knowledge-bases/{kb_id}/documents/{doc_id}`
 
-### 3.3.4 删除文档（含索引同步删除）
+### POST `/knowledge-bases/{kb_id}/documents/{doc_id}/reindex`
 
-- `DELETE /knowledge-bases/{kb_id}/documents/{doc_id}`
+响应：返回新的 `task_id`
 
-### 3.3.5 触发重建索引
+### Document Upload Good / Base / Bad
 
-- `POST /knowledge-bases/{kb_id}/documents/{doc_id}/reindex`
+Good（推荐）：
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/knowledge-bases/kb_001/documents" \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@notes.md" \
+  -F "title=操作系统笔记" \
+  -F "chunk_size=500" \
+  -F "chunk_overlap=100"
+```
+
+结果：`201`，返回 `doc_id + task_id`。
+
+Base（最小可用）：
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/knowledge-bases/kb_001/documents" \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@notes.txt"
+```
+
+结果：`201`，后端使用默认分块参数。
+
+Bad（非法类型）：
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/knowledge-bases/kb_001/documents" \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@notes.pdf"
+```
+
+结果：`422`
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "unsupported file type: only .txt and .md are currently supported"
+  }
+}
+```
 
 ---
 
-## 3.4 Chat API（问答 + 智能体）
+## 4.4 Task（长任务状态）
 
-### 3.4.1 发起问答
+### GET `/tasks/{task_id}`
 
-- `POST /chat/completions`
+响应 `data`：
+
+```json
+{
+  "task_id": "task_001",
+  "type": "document_index",
+  "status": "processing",
+  "progress": 65,
+  "error_code": null,
+  "error_message": null,
+  "created_at": "2026-03-18T12:00:00Z",
+  "updated_at": "2026-03-18T12:00:20Z"
+}
+```
+
+---
+
+## 4.5 Chat / Agent
+
+### POST `/chat/completions`
 
 请求：
 
@@ -225,14 +330,23 @@
   "kb_id": "kb_001",
   "session_id": "sess_001",
   "question": "进程和线程的核心区别是什么？",
-  "model": "gpt-4o-mini",
+  "model": "llm_default",
   "use_agent": true,
   "top_k": 6,
   "include_trace": true
 }
 ```
 
-返回 `data`：
+字段约束：
+- `kb_id`：必填
+- `session_id`：可选，缺失时后端可创建匿名会话或返回错误（二选一，实施前固定）
+- `question`：1-2000 字符
+- `model`：模型网关注册模型标识
+- `top_k`：1-20，默认 6
+- `use_agent`：默认 `false`
+- `include_trace`：默认 `false`
+
+响应 `data`：
 
 ```json
 {
@@ -240,10 +354,11 @@
   "citations": [
     {
       "doc_id": "doc_001",
-      "doc_title": "os-notes.pdf",
+      "doc_title": "os-notes.md",
       "chunk_id": "ck_101",
       "snippet": "线程共享进程地址空间...",
-      "score": 0.87
+      "score": 0.87,
+      "retrieval_source": "fused"
     }
   ],
   "memory_used": [
@@ -254,6 +369,7 @@
     }
   ],
   "trace_id": "trace_001",
+  "degraded": false,
   "latency_ms": 1832,
   "token_usage": {
     "prompt_tokens": 1231,
@@ -263,27 +379,18 @@
 }
 ```
 
-### 3.4.2 获取执行轨迹
+### GET `/chat/traces/{trace_id}`
 
-- `GET /chat/traces/{trace_id}`
-
-返回 `data` 关键字段：
-
-| 字段 | 说明 |
-|---|---|
-| `steps[]` | ReAct 执行步骤 |
-| `steps[].tool` | `search_knowledge/search_memory/summarize_context` |
-| `steps[].input` | 工具输入参数 |
-| `steps[].observation` | 工具输出摘要 |
-| `steps[].latency_ms` | 每步耗时 |
+`steps[].tool` 仅允许：
+- `search_knowledge`
+- `search_memory`
+- `summarize_context`
 
 ---
 
-## 3.5 Session API
+## 4.6 Session
 
-### 3.5.1 创建会话
-
-- `POST /sessions`
+### POST `/sessions`
 
 请求：
 
@@ -294,35 +401,23 @@
 }
 ```
 
-### 3.5.2 会话列表
+### GET `/sessions?page=1&page_size=20&kb_id=`
 
-- `GET /sessions?page=1&page_size=20&kb_id=`
+### GET `/sessions/{session_id}`
 
-### 3.5.3 会话详情
+### GET `/sessions/{session_id}/messages?page=1&page_size=50`
 
-- `GET /sessions/{session_id}`
-
-### 3.5.4 会话消息列表
-
-- `GET /sessions/{session_id}/messages?page=1&page_size=50`
-
-### 3.5.5 删除会话
-
-- `DELETE /sessions/{session_id}`
+### DELETE `/sessions/{session_id}`
 
 ---
 
-## 3.6 Health & Observability API
+## 4.7 Health / Observability
 
-### 3.6.1 存活检查
+### GET `/healthz`
 
-- `GET /healthz`
+### GET `/readyz`
 
-### 3.6.2 就绪检查（依赖检查）
-
-- `GET /readyz`
-
-返回 `data` 示例：
+响应 `data` 示例：
 
 ```json
 {
@@ -336,83 +431,119 @@
 }
 ```
 
-### 3.6.3 指标接口
+### GET `/metrics`
 
-- `GET /metrics`（Prometheus 抓取）
+用于 Prometheus 抓取。
 
 ---
 
-## 4. 后端内部服务契约（Service Layer）
+## 5. 内部服务契约（后端模块间）
 
-以下接口不直接暴露给前端，用于保证架构图中的模块解耦与复用。
-
-## 4.1 Document Processing Service
+> 以下不直接暴露给前端，用于后端分层解耦。
 
 ```go
-ProcessDocument(ctx, req) (taskID string, err error)
-ReindexDocument(ctx, docID string) (taskID string, err error)
-GetDocumentTask(ctx, taskID string) (DocumentTaskStatus, error)
-```
+type RetrievalService interface {
+    Retrieve(ctx context.Context, req RetrievalRequest) ([]Chunk, error)
+}
 
-## 4.2 Hybrid Retrieval Service
+type MemoryService interface {
+    Recall(ctx context.Context, req RecallRequest) ([]MemoryItem, error)
+    Upsert(ctx context.Context, req UpsertMemoryRequest) error
+    SummarizeSession(ctx context.Context, sessionID string) (string, error)
+}
 
-```go
-Retrieve(ctx, req) (results []RetrievedChunk, err error)
-```
+type ModelGateway interface {
+    Generate(ctx context.Context, req LLMRequest) (LLMResponse, error)
+    ListModels(ctx context.Context) ([]ModelMeta, error)
+}
 
-`req` 关键字段：
-- `kb_id`
-- `query`
-- `top_k`
-- `bm25_weight`
-- `vector_weight`
-
-## 4.3 Memory Service
-
-```go
-Recall(ctx, req) (memories []MemoryItem, err error)
-Upsert(ctx, req) error
-SummarizeSession(ctx, sessionID string) (summary string, err error)
-```
-
-## 4.4 Model Gateway Service
-
-```go
-Generate(ctx, req) (LLMResponse, error)
-ListModels(ctx) ([]ModelMeta, error)
+type AgentOrchestrator interface {
+    Run(ctx context.Context, req AgentRunRequest) (AgentResult, error)
+    GetTrace(ctx context.Context, traceID string) (AgentTrace, error)
+}
 ```
 
 约束：
-- 业务层必须通过网关调用模型
-- 支持外置与本地模型统一协议
+- 业务层必须经 `ModelGateway` 调模型
+- 智能体工具不得直连数据库
+- API 层不得直连检索/向量库/文件系统
 
-## 4.5 Agent Orchestrator Service（ReAct）
+---
 
-```go
-Run(ctx, req) (AgentResult, error)
-GetTrace(ctx, traceID string) (AgentTrace, error)
+## 6. Good / Base / Bad 示例（`POST /chat/completions`）
+
+### Good（完整且推荐）
+
+请求：
+
+```json
+{
+  "kb_id": "kb_001",
+  "session_id": "sess_001",
+  "question": "进程和线程的核心区别是什么？",
+  "model": "llm_default",
+  "use_agent": true,
+  "top_k": 6,
+  "include_trace": true
+}
 ```
 
-工具白名单：
-- `search_knowledge`
-- `search_memory`
-- `summarize_context`
+结果：`200`，返回 `answer + citations + trace_id + token_usage`。
+
+### Base（最小可用）
+
+请求：
+
+```json
+{
+  "kb_id": "kb_001",
+  "question": "什么是死锁？"
+}
+```
+
+结果：`200`，后端使用默认 `model/top_k/use_agent/include_trace`。
+
+### Bad（非法）
+
+请求：
+
+```json
+{
+  "kb_id": "",
+  "question": ""
+}
+```
+
+结果：`422`
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "kb_id and question are required",
+    "details": {
+      "fields": ["kb_id", "question"]
+    }
+  },
+  "request_id": "req_01H...",
+  "timestamp": "2026-03-18T12:00:00Z"
+}
+```
 
 ---
 
-## 5. 主链路时序与状态
+## 7. 前后端联调最小清单
 
-1. 前端上传文档，`Document API` 返回 `task_id`。
-2. `Document Processing Service` 完成解析/切片/索引，状态流转：`pending -> processing -> indexed | failed`。
-3. 前端发起问答，`Chat API` 调用编排层。
-4. 编排层按需调用检索、记忆、模型网关、智能体。
-5. 返回统一结果：`answer + citations + (optional) trace`。
+1. 前端按 `snake_case` 字段消费接口。
+2. 前端只基于 `error.code` 分支，不依赖 `message` 文案。
+3. 文件上传后必须轮询 `GET /tasks/{task_id}`，不要假设同步完成。
+4. 聊天响应中的 `citations` 必须可渲染来源片段。
+5. `trace_id` 仅在 `include_trace=true` 或 `use_agent=true` 时要求返回。
 
 ---
 
-## 6. 版本与兼容策略
+## 8. 变更管理
 
-- 当前版本：`v1`（MVP）
-- 破坏性变更：通过 `/api/v2` 发布
-- 非破坏性新增：仅新增字段，不删除既有字段
-- 前端兼容建议：忽略未知字段、按 `code` 而非 `message` 判断错误
+- 任何字段删除/改名：视为破坏性变更，走 `/api/v2`。
+- 新增可选字段：允许在 `v1` 内发布。
+- 接口契约变更必须同步更新本文档与前端类型定义。

@@ -1,117 +1,202 @@
-# 知忆 MemoBase
+# 知忆 MemoBase（MVP）
 
-基于混合检索、记忆管理与 ReAct 编排的知识库智能体平台设计与实现。
+基于混合检索、记忆管理与 ReAct 编排的知识库智能体平台 MVP。当前仓库已提供可运行的前后端实现、Ollama 本地模型调用协议，以及 Docker 一键部署方案。
 
-`知忆（MemoBase）` 是一个面向课程团队、实验室和小型组织知识管理场景的知识库智能体系统。项目以 `Go` 作为后端开发语言，以 `React` 构建 Web 前端，结合 `Qdrant` 向量数据库、`BM25` 关键词检索、外置与本地大模型接入、记忆管理和 `ReAct` 智能体编排能力，提供一个兼具实用价值与工程展示价值的智能知识平台。
+## 1. 技术栈与边界
 
-## 项目定位
+- 前端：React + TypeScript + Vite
+- 后端：Go + Gin
+- 关系数据：PostgreSQL
+- 向量检索：Qdrant
+- 检索策略：关键词（BM25-like）+ 向量融合检索
+- 模型网关：本地 Ollama（`/api/chat` + `/api/embeddings`）
+- 编排：轻量 ReAct 工具轨迹
 
-本项目是一个围绕“知识接入、混合检索、记忆利用、智能体执行、工程化部署”构建的知识库智能体平台。
+MVP 不引入：OpenSearch / MinIO / Redis / Viper / Nginx。
 
-目标场景包括：
+## 2. 功能清单（MVP）
 
-- 课程资料整理与问答
-- 实验室文档沉淀与检索
-- 小型团队内部知识管理
-- 项目过程资料汇总、总结与辅助分析
+- 用户登录（默认 demo 账号）
+- 知识库创建、列表、删除
+- 文档上传、索引任务状态轮询、重建索引、删除
+- 问答页面：答案 + 引用 + 执行轨迹
+- 会话列表与消息查看
+- 健康检查与依赖状态页面
 
-## 核心能力
+当前解析能力边界：文档内容解析仅支持 `.txt/.md` 文本文件。
 
-- 知识库管理：支持知识库创建、维护和文档归档
-- 文档处理：支持文档上传、解析、切片与索引构建
-- 混合检索：结合 `BM25` 与 `Qdrant` 向量检索提升召回效果
-- 智能问答：基于知识库进行问答，并展示引用来源
-- 记忆管理：支持短期记忆与长期记忆的提取、存储和召回
-- 智能体编排：基于 `ReAct` 执行知识检索、记忆检索和上下文整理
-- 模型网关：统一接入外置大模型与本地模型
-- 工程化部署：以 `Docker` 部署为主，并提供基础运行状态查看与日志排查能力
+## 3. 目录结构
 
-## 技术栈
+```text
+.
+├── backend/                  # Go API 服务
+│   ├── cmd/server
+│   ├── internal/
+│   │   ├── api               # 路由与 handler
+│   │   ├── core              # 文档处理、检索、聊天编排
+│   │   ├── infra             # DB / Qdrant / Ollama 客户端
+│   │   └── store             # PostgreSQL 数据访问
+│   └── migrations/           # 初始化 SQL
+├── frontend/                 # React 前端
+│   └── src/pages             # 登录/知识库/文档/问答/会话/运维页面
+├── docker-compose.yml
+└── doc/接口文档（MVP）.md     # API 契约文档
+```
 
-### 前端
+## 4. 快速启动（推荐：Docker Compose）
 
-- `React`
+### 4.1 前置条件
 
-### 后端
+- Docker Desktop >= 24
+- 可用网络（首次拉取镜像与 Ollama 模型）
 
-- `Go`
+### 4.2 启动服务（开发环境）
 
-### 数据与检索
+```bash
+docker compose up -d --build
+```
 
-- `Qdrant`
-- `BM25`
+启动后服务端口：
+- 前端：<http://localhost:5173>
+- 后端：<http://localhost:8080>
+- Postgres：`localhost:5432`
+- Qdrant：<http://localhost:6333>
+- Ollama：<http://localhost:11434>
 
-### 模型与智能体
+### 4.3 启动服务（生产配置覆盖）
 
-- 外置大模型接入
-- 本地模型接入
-- `ReAct` 智能体编排
-- 分层记忆管理
+```bash
+POSTGRES_PASSWORD=replace-me \
+JWT_SECRET=replace-with-long-random-secret \
+CORS_ORIGIN=https://your-domain.example \
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
 
-### 部署与运维
+说明：
+- `docker-compose.prod.yml` 会关闭 demo 用户、要求强密钥、并限制部分资源。
+- 生产覆盖默认不对宿主机暴露 Postgres/Qdrant/Ollama 端口。
 
-- Docker
-- 基础运行状态查看
-- 基础日志排查
+### 4.4 拉取 Ollama 模型（必须）
 
-`Kubernetes`、`Prometheus`、`Grafana` 作为后续优化方向，不属于当前 MVP 必做范围。
+首次运行请在宿主机执行：
 
-## 最小可行产品（MVP）
+```bash
+# 聊天模型
+curl http://localhost:11434/api/pull -d '{"name":"qwen2.5:3b"}'
 
-第一阶段目标是交付一个可演示的最小可行版本，核心闭环如下：
+# 向量模型
+curl http://localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'
+```
 
-`用户上传文档 -> 系统构建 BM25 与向量索引 -> 用户发起提问 -> 智能体调用知识检索与记忆检索 -> 模型生成回答 -> 前端展示答案与引用 -> 系统在 Docker 环境稳定运行并可进行基础状态检查与日志排障`
+> 如果你希望换模型，请同时修改 `docker-compose.yml` 中 backend 的 `OLLAMA_CHAT_MODEL` 和 `OLLAMA_EMBED_MODEL`。
 
-MVP 计划包括：
+### 4.5 默认账号（仅开发环境）
 
-- 用户登录与退出
-- 知识库创建、查看、删除
-- 文档上传、解析、切片
-- `BM25` 索引与 `Qdrant` 向量索引构建
-- 基于混合检索的问答
-- 基础记忆管理
-- 单个知识库助手智能体
-- 外置模型与本地模型切换
-- Docker 部署、运行脚本与基础日志/状态检查
+- 用户名：`demo`
+- 密码：`demo123`（`ENABLE_DEMO_USER=true` 时自动创建）
 
-## 最终功能展望
+## 5. 本地开发模式（不使用 Compose）
 
-项目完整版本将逐步扩展以下能力：
+## 5.1 启动基础依赖
 
-- 多知识库组织与知识运营
-- 更完整的会话与任务历史中心
-- 更稳定的记忆提取与记忆召回机制
-- 更丰富的智能体工具与任务型执行能力
-- 更完善的部署、监控和运行维护体系
-- 在资源允许时逐步引入 `Kubernetes` 编排与 `Prometheus/Grafana` 监控看板
+你需要自行准备并启动：
+- PostgreSQL（数据库 `memo`，用户 `memo`，密码 `memo`）
+- Qdrant（`http://localhost:6333`）
+- Ollama（`http://localhost:11434`，并已拉取模型）
 
-## 系统架构概览
+## 5.2 启动后端
 
-系统计划采用前后端分离架构，并按以下层次组织：
+```bash
+cd backend
+go mod tidy
+cp .env.example .env  # 可选，或直接设置环境变量
+go run ./cmd/server
+```
 
-- 前端层：`React` Web 界面
-- API 层：`Go` 后端服务
-- 检索层：`BM25 + Qdrant` 混合检索
-- 记忆层：短期记忆与长期记忆管理
-- 智能体层：基于 `ReAct` 的工具调用编排
-- 模型层：外置模型与本地模型统一网关
-- 运维层：`Docker` 与基础运维保障（状态检查、日志排障）
+## 5.3 启动前端
 
-## 仓库说明
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-当前仓库处于项目规划与文档建设阶段。随着开发推进，代码和设计文档将逐步补充。
+如需指定 API 地址：
 
-## 开发说明
+```bash
+VITE_API_BASE=http://localhost:8080/api/v1 npm run dev
+```
 
-当前优先事项：
+## 6. MVP 使用流程
 
-1. 明确 MVP 边界
-2. 完成需求规格说明书
-3. 完成系统设计说明书
-4. 搭建前后端基础工程
-5. 跑通知识库问答主链路
+1. 登录系统
+2. 创建知识库
+3. 进入文档页上传 `.txt/.md`
+4. 等待任务状态变为 `succeeded`
+5. 进入问答页提问，查看答案与引用
+6. 在会话页查看消息历史
+7. 在运维页查看依赖健康状态
 
-## 说明
+## 7. Ollama 协议实现说明
 
-本项目为《计算机综合项目实践》课程项目，用于展示从需求分析、系统设计到开发、测试、部署与运维监控的完整软件工程实践过程。
+后端已实现以下本地协议调用：
 
+- 聊天：`POST /api/chat`
+  - 入参：`model`, `messages`, `stream=false`
+  - 用于生成最终回答
+- 向量：`POST /api/embeddings`
+  - 入参：`model`, `prompt`
+  - 用于写入 Qdrant 与向量检索
+
+相关环境变量（backend）：
+
+```env
+OLLAMA_URL=http://ollama:11434
+OLLAMA_CHAT_MODEL=qwen2.5:3b
+OLLAMA_EMBED_MODEL=nomic-embed-text
+OLLAMA_TIMEOUT_SEC=120
+```
+
+## 8. API 与观测说明
+
+- 主入口：`/api/v1`
+- 统一成功结构：`{ data, request_id, timestamp }`
+- 统一失败结构：`{ error: { code, message, details }, request_id, timestamp }`
+- 指标端点：`/metrics`（兼容 `/api/v1/metrics`）
+
+详细契约见：
+- [doc/接口文档（MVP）.md](doc/接口文档（MVP）.md)
+
+## 9. 常见问题
+
+1. `MODEL_UNAVAILABLE`
+- 原因：Ollama 未启动或模型未拉取。
+- 处理：检查 `http://localhost:11434`，执行模型 pull。
+
+2. 文档一直 `processing`
+- 原因：向量化或 Qdrant 写入失败。
+- 处理：查看 backend 日志与 `GET /api/v1/tasks/{task_id}`。
+
+3. 前端请求 401
+- 原因：token 失效。
+- 处理：重新登录。
+
+4. `readyz` 失败
+- 原因：DB/Qdrant/Ollama 任一依赖不可用。
+- 处理：先确保 compose 服务都已启动。
+
+## 10. 开发建议
+
+- 每次改 API 契约后，先更新 `doc/接口文档（MVP）.md`。
+- 前后端联调时，优先用 `request_id` 排查链路。
+- 如需扩展到课程增强目标（K8s/Prometheus/Grafana），建议在当前 compose 验证稳定后再拆分。
+
+## 11. 备份与恢复（基础版）
+
+```bash
+# 备份（默认输出到 backups/<timestamp>）
+./scripts/backup.sh
+
+# 恢复（支持目录或 .tar.gz）
+./scripts/restore.sh ./backups/<timestamp>.tar.gz
+```

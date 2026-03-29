@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -24,11 +26,15 @@ type Config struct {
 	BM25Weight       float64
 	VectorWeight     float64
 	RetrieveLimit    int
+	EnableDemoUser   bool
 }
 
 func Load() Config {
+	appEnv := get("APP_ENV", "dev")
+	enableDemoUserDefault := appEnv == "dev"
+
 	return Config{
-		AppEnv:           get("APP_ENV", "dev"),
+		AppEnv:           appEnv,
 		Port:             get("PORT", "8080"),
 		CORSOrigin:       get("CORS_ORIGIN", "http://localhost:5173"),
 		JWTSecret:        get("JWT_SECRET", "memo-dev-secret"),
@@ -45,7 +51,32 @@ func Load() Config {
 		BM25Weight:       getFloat("BM25_WEIGHT", 0.5),
 		VectorWeight:     getFloat("VECTOR_WEIGHT", 0.5),
 		RetrieveLimit:    getInt("RETRIEVAL_DB_CANDIDATE_LIMIT", 5000),
+		EnableDemoUser:   getBool("ENABLE_DEMO_USER", enableDemoUserDefault),
 	}
+}
+
+func (c Config) Validate() error {
+	if strings.TrimSpace(c.Port) == "" {
+		return fmt.Errorf("PORT is required")
+	}
+	if c.TokenTTL <= 0 {
+		return fmt.Errorf("TOKEN_TTL_HOURS must be greater than 0")
+	}
+	if c.BM25Weight < 0 || c.VectorWeight < 0 {
+		return fmt.Errorf("BM25_WEIGHT and VECTOR_WEIGHT must be non-negative")
+	}
+	if c.BM25Weight == 0 && c.VectorWeight == 0 {
+		return fmt.Errorf("BM25_WEIGHT and VECTOR_WEIGHT cannot both be 0")
+	}
+	if c.AppEnv != "dev" {
+		if strings.TrimSpace(c.JWTSecret) == "" {
+			return fmt.Errorf("JWT_SECRET is required in non-dev environments")
+		}
+		if c.JWTSecret == "memo-dev-secret" {
+			return fmt.Errorf("JWT_SECRET cannot use default value in non-dev environments")
+		}
+	}
+	return nil
 }
 
 func get(key, fallback string) string {
@@ -78,4 +109,19 @@ func getFloat(key string, fallback float64) float64 {
 		return fallback
 	}
 	return parsed
+}
+
+func getBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if value == "" {
+		return fallback
+	}
+	switch value {
+	case "1", "true", "t", "yes", "y", "on":
+		return true
+	case "0", "false", "f", "no", "n", "off":
+		return false
+	default:
+		return fallback
+	}
 }

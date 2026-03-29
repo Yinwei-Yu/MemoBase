@@ -50,7 +50,7 @@ MVP 不引入：OpenSearch / MinIO / Redis / Viper / Nginx。
 - Docker Desktop >= 24
 - 可用网络（首次拉取镜像与 Ollama 模型）
 
-### 4.2 启动服务
+### 4.2 启动服务（开发环境）
 
 ```bash
 docker compose up -d --build
@@ -63,7 +63,20 @@ docker compose up -d --build
 - Qdrant：<http://localhost:6333>
 - Ollama：<http://localhost:11434>
 
-### 4.3 拉取 Ollama 模型（必须）
+### 4.3 启动服务（生产配置覆盖）
+
+```bash
+POSTGRES_PASSWORD=replace-me \
+JWT_SECRET=replace-with-long-random-secret \
+CORS_ORIGIN=https://your-domain.example \
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+说明：
+- `docker-compose.prod.yml` 会关闭 demo 用户、要求强密钥、并限制部分资源。
+- 生产覆盖默认不对宿主机暴露 Postgres/Qdrant/Ollama 端口。
+
+### 4.4 拉取 Ollama 模型（必须）
 
 首次运行请在宿主机执行：
 
@@ -77,10 +90,10 @@ curl http://localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'
 
 > 如果你希望换模型，请同时修改 `docker-compose.yml` 中 backend 的 `OLLAMA_CHAT_MODEL` 和 `OLLAMA_EMBED_MODEL`。
 
-### 4.4 默认账号
+### 4.5 默认账号（仅开发环境）
 
 - 用户名：`demo`
-- 密码：`demo123`
+- 密码：`demo123`（`ENABLE_DEMO_USER=true` 时自动创建）
 
 ## 5. 本地开发模式（不使用 Compose）
 
@@ -144,11 +157,12 @@ OLLAMA_EMBED_MODEL=nomic-embed-text
 OLLAMA_TIMEOUT_SEC=120
 ```
 
-## 8. API 说明
+## 8. API 与观测说明
 
 - 主入口：`/api/v1`
 - 统一成功结构：`{ data, request_id, timestamp }`
 - 统一失败结构：`{ error: { code, message, details }, request_id, timestamp }`
+- 指标端点：`/metrics`（兼容 `/api/v1/metrics`）
 
 详细契约见：
 - [doc/接口文档（MVP）.md](doc/接口文档（MVP）.md)
@@ -176,3 +190,13 @@ OLLAMA_TIMEOUT_SEC=120
 - 每次改 API 契约后，先更新 `doc/接口文档（MVP）.md`。
 - 前后端联调时，优先用 `request_id` 排查链路。
 - 如需扩展到课程增强目标（K8s/Prometheus/Grafana），建议在当前 compose 验证稳定后再拆分。
+
+## 11. 备份与恢复（基础版）
+
+```bash
+# 备份（默认输出到 backups/<timestamp>）
+./scripts/backup.sh
+
+# 恢复（支持目录或 .tar.gz）
+./scripts/restore.sh ./backups/<timestamp>.tar.gz
+```

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -15,6 +16,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		panic(fmt.Errorf("invalid config: %w", err))
+	}
 	logger := api.NewLogger(cfg.AppEnv)
 	app, err := core.New(cfg, logger)
 	if err != nil {
@@ -27,12 +31,17 @@ func main() {
 		Addr:              ":" + cfg.Port,
 		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	go func() {
 		logger.Info("server_started", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			panic(err)
+			logger.Error("server_failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 

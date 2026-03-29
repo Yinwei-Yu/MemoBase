@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"memobase/backend/internal/core"
+	"memobase/backend/internal/observability"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,6 +18,7 @@ func NewServer(app *core.App) *gin.Engine {
 	r.Use(gin.Recovery())
 	r.Use(Cors(app.Config.CORSOrigin))
 	r.Use(RequestID())
+	r.Use(observability.HTTPMetrics())
 	r.Use(Logger(app.Logger))
 	RegisterRoutes(r, app)
 	return r

@@ -14,6 +14,7 @@ import (
 
 	"memobase/backend/internal/core"
 	"memobase/backend/internal/infra"
+	"memobase/backend/internal/observability"
 	"memobase/backend/internal/store"
 	"memobase/backend/internal/util"
 
@@ -125,6 +126,9 @@ func clampTopK(v int) int {
 }
 
 func RegisterRoutes(r *gin.Engine, app *core.App) {
+	metricsHandler := observability.PrometheusHandler()
+	r.GET("/metrics", metricsHandler)
+
 	v1 := r.Group("/api/v1")
 
 	v1.POST("/auth/login", func(c *gin.Context) {
@@ -195,10 +199,7 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 		}
 		util.Success(c, http.StatusOK, gin.H{"status": status, "checks": checks})
 	})
-	v1.GET("/metrics", func(c *gin.Context) {
-		c.Header("Content-Type", "text/plain; version=0.0.4")
-		_, _ = c.Writer.WriteString("# mock metrics\nmemobase_up 1\n")
-	})
+	v1.GET("/metrics", metricsHandler)
 
 	authed := v1.Group("/")
 	authed.Use(AuthRequired(app))

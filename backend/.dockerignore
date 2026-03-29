@@ -1,0 +1,10 @@
+.git
+.gitignore
+.env
+.env.*
+*.log
+*.tmp
+*.md
+storage
+tmp
+coverage.out

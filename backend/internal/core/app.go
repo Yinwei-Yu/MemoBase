@@ -39,9 +39,14 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	st := store.New(db)
-	passwordHash, _ := bcrypt.GenerateFromPassword([]byte("demo123"), bcrypt.DefaultCost)
-	if err := st.EnsureDemoUser(ctx, "demo", string(passwordHash), "Demo User"); err != nil {
-		return nil, err
+	if cfg.EnableDemoUser {
+		passwordHash, err := bcrypt.GenerateFromPassword([]byte("demo123"), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, err
+		}
+		if err := st.EnsureDemoUser(ctx, "demo", string(passwordHash), "Demo User"); err != nil {
+			return nil, err
+		}
 	}
 	app := &App{
 		Config: cfg,

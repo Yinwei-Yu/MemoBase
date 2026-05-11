@@ -33,14 +33,18 @@ export default function OpsPage() {
         {healthQuery.isError && <div className="error-box">{(healthQuery.error as Error).message}</div>}
         {healthQuery.data && (
           <>
-            <p className="system-tip">
-              overall: <strong>{healthQuery.data.status}</strong>
-            </p>
+            <div className={`status-banner ${healthQuery.data.status === 'ok' ? 'healthy' : 'unhealthy'}`}>
+              <span className={`status-dot ${healthQuery.data.status === 'ok' ? 'up' : 'down'}`} />
+              整体状态: {healthQuery.data.status === 'ok' ? '正常运行' : '异常'}
+            </div>
             <div className="list">
               {Object.entries(healthQuery.data.checks).map(([key, value]) => (
                 <div key={key} className="list-item">
                   <h3>{key}</h3>
-                  <span className={value === 'up' ? 'pill success' : 'pill danger'}>{value}</span>
+                  <span className={`pill ${value === 'up' ? 'success' : 'danger'}`}>
+                    <span className={`status-dot ${value === 'up' ? 'up' : 'down'}`} />
+                    {value}
+                  </span>
                 </div>
               ))}
             </div>

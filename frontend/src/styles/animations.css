@@ -1,0 +1,135 @@
+/* ============================================================
+   Animations — Keyframes, Transitions
+   ============================================================ */
+
+/* ---- Fade In ---- */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- Modal Enter ---- */
+@keyframes modal-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ---- Bubble Enter (Chat) ---- */
+@keyframes bubble-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- Slide In From Left ---- */
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ---- Slide In From Bottom ---- */
+@keyframes slide-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- Pulse Dot (Status indicator) ---- */
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* ---- Shimmer (Loading) ---- */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* ---- Typing indicator ---- */
+@keyframes typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+}
+
+/* ---- Staggered entrance for list items ---- */
+.list-item {
+  animation: slide-in-up var(--duration-slow) var(--ease-out) both;
+}
+
+.list-item:nth-child(1) { animation-delay: 0ms; }
+.list-item:nth-child(2) { animation-delay: 40ms; }
+.list-item:nth-child(3) { animation-delay: 80ms; }
+.list-item:nth-child(4) { animation-delay: 120ms; }
+.list-item:nth-child(5) { animation-delay: 160ms; }
+.list-item:nth-child(6) { animation-delay: 200ms; }
+.list-item:nth-child(7) { animation-delay: 240ms; }
+.list-item:nth-child(8) { animation-delay: 280ms; }
+
+/* ---- Card entrance ---- */
+.card {
+  animation: slide-in-up var(--duration-slow) var(--ease-out) both;
+}
+
+.page-grid > .card:nth-child(2) {
+  animation-delay: 80ms;
+}
+
+.page-grid > .card:nth-child(3) {
+  animation-delay: 160ms;
+}
+
+/* ---- Sidebar link hover ripple ---- */
+.side-link {
+  position: relative;
+  overflow: hidden;
+}
+
+/* ---- Reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

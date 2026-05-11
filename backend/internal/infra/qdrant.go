@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 type QdrantClient struct {
 	BaseURL string
 	Client  *http.Client
+	Logger  *slog.Logger
 
 	ensureMu    sync.Mutex
 	ensuredSize map[string]int
@@ -32,10 +34,11 @@ type qdrantSearchResult struct {
 	Payload map[string]interface{} `json:"payload"`
 }
 
-func NewQdrantClient(baseURL string) *QdrantClient {
+func NewQdrantClient(baseURL string, logger *slog.Logger) *QdrantClient {
 	return &QdrantClient{
 		BaseURL:     baseURL,
 		Client:      &http.Client{Timeout: 15 * time.Second},
+		Logger:      logger,
 		ensuredSize: make(map[string]int),
 	}
 }
@@ -111,6 +114,7 @@ func (q *QdrantClient) EnsureCollection(ctx context.Context, collection string, 
 }
 
 func (q *QdrantClient) Upsert(ctx context.Context, collection string, points []QdrantPoint) error {
+	startedAt := time.Now()
 	collection = strings.TrimSpace(collection)
 	if collection == "" {
 		return fmt.Errorf("qdrant collection is required")
@@ -125,12 +129,26 @@ func (q *QdrantClient) Upsert(ctx context.Context, collection string, points []Q
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := q.Client.Do(req)
 	if err != nil {
+		q.Logger.Error("qdrant_upsert_failed",
+			slog.String("collection", collection),
+			slog.Int("points_count", len(points)),
+			slog.String("error", err.Error()),
+		)
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
+		q.Logger.Error("qdrant_upsert_status_error",
+			slog.String("collection", collection),
+			slog.Int("status", resp.StatusCode),
+		)
 		return qdrantHTTPError("upsert", resp)
 	}
+	q.Logger.Info("qdrant_upsert_completed",
+		slog.String("collection", collection),
+		slog.Int("points_count", len(points)),
+		slog.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
+	)
 	return nil
 }
 
@@ -189,6 +207,7 @@ func (q *QdrantClient) DeleteCollection(ctx context.Context, collection string) 
 }
 
 func (q *QdrantClient) Search(ctx context.Context, collection string, vector []float64, limit int) (map[string]float64, error) {
+	startedAt := time.Now()
 	collection = strings.TrimSpace(collection)
 	if collection == "" {
 		return nil, fmt.Errorf("qdrant collection is required")
@@ -207,6 +226,11 @@ func (q *QdrantClient) Search(ctx context.Context, collection string, vector []f
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := q.Client.Do(req)
 	if err != nil {
+		q.Logger.Error("qdrant_search_failed",
+			slog.String("collection", collection),
+			slog.Int("limit", limit),
+			slog.String("error", err.Error()),
+		)
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -229,6 +253,12 @@ func (q *QdrantClient) Search(ctx context.Context, collection string, vector []f
 			scores[chunkID] = item.Score
 		}
 	}
+	q.Logger.Info("qdrant_search_completed",
+		slog.String("collection", collection),
+		slog.Int("limit", limit),
+		slog.Int("results_count", len(scores)),
+		slog.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
+	)
 	return scores, nil
 }
 

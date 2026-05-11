@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -23,7 +24,7 @@ func qdrantResp(status int, body string) *http.Response {
 }
 
 func newQdrantTestClient(fn qdrantRoundTripFunc) *QdrantClient {
-	client := NewQdrantClient("http://qdrant.local")
+	client := NewQdrantClient("http://qdrant.local", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	client.Client = &http.Client{Transport: fn}
 	return client
 }

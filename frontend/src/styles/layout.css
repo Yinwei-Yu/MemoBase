@@ -40,16 +40,34 @@
 }
 
 .brand-mark {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: var(--radius-md);
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, var(--accent-500), var(--accent-700));
+  background: var(--gradient-accent-wide);
+  background-size: 200% 200%;
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
-  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.35);
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.4);
+  animation: gradient-shift 6s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.brand-mark svg {
+  display: block;
+}
+
+.brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: calc(var(--radius-md) - 1px);
+  background: rgba(255, 255, 255, 0.1);
+  pointer-events: none;
 }
 
 .top-links {
@@ -275,6 +293,8 @@
   border: 1px solid transparent;
   transition: all var(--duration-normal) var(--ease-out);
   text-decoration: none;
+  position: relative;
+  overflow: visible;
 }
 
 .side-link-mark {
@@ -362,6 +382,10 @@
 .workspace-shell.is-collapsed .side-link {
   justify-content: center;
   padding: 10px var(--space-2);
+}
+
+.workspace-shell.is-collapsed .side-link::before {
+  display: none;
 }
 
 .workspace-shell.is-collapsed .side-link:hover {

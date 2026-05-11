@@ -82,6 +82,18 @@
   --color-warning-bg: #fffbeb;
   --color-info: #2563eb;
   --color-info-bg: #eff6ff;
+
+  /* ---- Gradient Tokens ---- */
+  --gradient-accent: linear-gradient(135deg, var(--accent-500), var(--accent-700));
+  --gradient-accent-wide: linear-gradient(135deg, var(--accent-400), var(--accent-600), var(--accent-800));
+  --gradient-accent-subtle: linear-gradient(135deg, var(--accent-50), rgba(139, 92, 246, 0.02));
+  --gradient-surface: linear-gradient(180deg, var(--bg-secondary), var(--bg-tertiary));
+
+  /* ---- Glow Tokens ---- */
+  --glow-accent-sm: 0 0 12px rgba(139, 92, 246, 0.15);
+  --glow-accent-md: 0 0 20px rgba(139, 92, 246, 0.2);
+  --glow-accent-lg: 0 0 40px rgba(139, 92, 246, 0.25);
+  --glow-accent-border: 0 0 0 1px rgba(139, 92, 246, 0.3), 0 0 20px rgba(139, 92, 246, 0.1);
 }
 
 /* ============================================================
@@ -196,8 +208,18 @@
   --scrollbar-track: #12141c;
   --scrollbar-thumb: #2d3148;
 
+  --color-success: #10b981;
   --color-success-bg: rgba(5, 150, 105, 0.12);
+  --color-danger: #f87171;
   --color-danger-bg: rgba(220, 38, 38, 0.12);
+  --color-warning: #fbbf24;
   --color-warning-bg: rgba(217, 119, 6, 0.12);
+  --color-info: #60a5fa;
   --color-info-bg: rgba(37, 99, 235, 0.12);
+
+  --gradient-accent-subtle: linear-gradient(135deg, rgba(139, 92, 246, 0.06), rgba(139, 92, 246, 0.02));
+  --glow-accent-sm: 0 0 12px rgba(139, 92, 246, 0.2);
+  --glow-accent-md: 0 0 24px rgba(139, 92, 246, 0.25);
+  --glow-accent-lg: 0 0 48px rgba(139, 92, 246, 0.3);
+  --glow-accent-border: 0 0 0 1px rgba(139, 92, 246, 0.35), 0 0 24px rgba(139, 92, 246, 0.15);
 }

@@ -1,0 +1,203 @@
+/* ============================================================
+   Design Tokens — KnowledgeAI Console
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* ---- Typography ---- */
+  --font-sans: 'Inter', 'Noto Sans SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+
+  /* ---- Type Scale ---- */
+  --text-xs: 0.6875rem;    /* 11px */
+  --text-sm: 0.8125rem;    /* 13px */
+  --text-base: 0.875rem;   /* 14px */
+  --text-md: 1rem;         /* 16px */
+  --text-lg: 1.125rem;     /* 18px */
+  --text-xl: 1.375rem;     /* 22px */
+  --text-2xl: 1.75rem;     /* 28px */
+  --text-3xl: 2.25rem;     /* 36px */
+  --text-4xl: 3rem;        /* 48px */
+
+  /* ---- Spacing ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---- Radii ---- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-full: 9999px;
+
+  /* ---- Shadows (light) ---- */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.12);
+
+  /* ---- Z-index ---- */
+  --z-nav: 40;
+  --z-sidebar: 30;
+  --z-modal-backdrop: 50;
+  --z-modal: 60;
+
+  /* ---- Transitions ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+
+  /* ---- Accent Palette (Violet/Indigo) ---- */
+  --accent-50: #f5f3ff;
+  --accent-100: #ede9fe;
+  --accent-200: #ddd6fe;
+  --accent-300: #c4b5fd;
+  --accent-400: #a78bfa;
+  --accent-500: #8b5cf6;
+  --accent-600: #7c3aed;
+  --accent-700: #6d28d9;
+  --accent-800: #5b21b6;
+  --accent-900: #4c1d95;
+
+  /* ---- Semantic Colors ---- */
+  --color-success: #059669;
+  --color-success-bg: #ecfdf5;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fef2f2;
+  --color-warning: #d97706;
+  --color-warning-bg: #fffbeb;
+  --color-info: #2563eb;
+  --color-info-bg: #eff6ff;
+}
+
+/* ============================================================
+   Light Theme (default)
+   ============================================================ */
+:root,
+[data-theme="light"] {
+  --bg-primary: #faf9f7;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f5f3f0;
+  --bg-elevated: #ffffff;
+  --bg-hover: #f0eeeb;
+  --bg-active: #eae8e4;
+
+  --surface: #ffffff;
+  --surface-dim: #f8f7f5;
+  --surface-bright: #ffffff;
+
+  --text-primary: #1a1614;
+  --text-secondary: #44403c;
+  --text-tertiary: #78716c;
+  --text-muted: #a8a29e;
+  --text-inverse: #faf9f7;
+
+  --border-primary: #e7e5e4;
+  --border-secondary: #d6d3d1;
+  --border-focus: var(--accent-500);
+
+  --accent: var(--accent-600);
+  --accent-hover: var(--accent-700);
+  --accent-soft: var(--accent-50);
+  --accent-muted: var(--accent-100);
+
+  --nav-bg: rgba(255, 255, 255, 0.88);
+  --nav-border: rgba(0, 0, 0, 0.06);
+  --sidebar-bg: #faf9f7;
+  --sidebar-border: var(--border-primary);
+
+  --card-bg: #ffffff;
+  --card-border: var(--border-primary);
+  --card-hover-border: var(--border-secondary);
+
+  --input-bg: #ffffff;
+  --input-border: var(--border-primary);
+  --input-focus-border: var(--accent-500);
+  --input-focus-ring: rgba(139, 92, 246, 0.15);
+
+  --chat-user-bg: var(--accent-600);
+  --chat-user-text: #ffffff;
+  --chat-ai-bg: #f8f7f5;
+  --chat-ai-border: var(--border-primary);
+
+  --shadow-color: 220 10% 20%;
+  --overlay-bg: rgba(26, 22, 20, 0.45);
+
+  --scrollbar-track: #f5f3f0;
+  --scrollbar-thumb: #d6d3d1;
+}
+
+/* ============================================================
+   Dark Theme
+   ============================================================ */
+[data-theme="dark"] {
+  --bg-primary: #0f1117;
+  --bg-secondary: #161921;
+  --bg-tertiary: #1e2130;
+  --bg-elevated: #1a1d27;
+  --bg-hover: #252839;
+  --bg-active: #2d3148;
+
+  --surface: #161921;
+  --surface-dim: #12141c;
+  --surface-bright: #1e2130;
+
+  --text-primary: #e8e6e3;
+  --text-secondary: #b8b4ae;
+  --text-tertiary: #8a857e;
+  --text-muted: #5c5853;
+  --text-inverse: #0f1117;
+
+  --border-primary: #252839;
+  --border-secondary: #343752;
+  --border-focus: var(--accent-400);
+
+  --accent: var(--accent-400);
+  --accent-hover: var(--accent-300);
+  --accent-soft: rgba(139, 92, 246, 0.08);
+  --accent-muted: rgba(139, 92, 246, 0.15);
+
+  --nav-bg: rgba(15, 17, 23, 0.92);
+  --nav-border: rgba(255, 255, 255, 0.06);
+  --sidebar-bg: #12141c;
+  --sidebar-border: var(--border-primary);
+
+  --card-bg: #1a1d27;
+  --card-border: var(--border-primary);
+  --card-hover-border: var(--border-secondary);
+
+  --input-bg: #12141c;
+  --input-border: var(--border-primary);
+  --input-focus-border: var(--accent-400);
+  --input-focus-ring: rgba(167, 139, 250, 0.18);
+
+  --chat-user-bg: var(--accent-600);
+  --chat-user-text: #ffffff;
+  --chat-ai-bg: #1e2130;
+  --chat-ai-border: var(--border-primary);
+
+  --shadow-color: 230 40% 5%;
+  --overlay-bg: rgba(0, 0, 0, 0.6);
+
+  --scrollbar-track: #12141c;
+  --scrollbar-thumb: #2d3148;
+
+  --color-success-bg: rgba(5, 150, 105, 0.12);
+  --color-danger-bg: rgba(220, 38, 38, 0.12);
+  --color-warning-bg: rgba(217, 119, 6, 0.12);
+  --color-info-bg: rgba(37, 99, 235, 0.12);
+}

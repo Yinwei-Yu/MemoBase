@@ -1,0 +1,244 @@
+/* ============================================================
+   Responsive — Breakpoints
+   ============================================================ */
+
+/* ---- Tablet landscape (<=1120px) ---- */
+@media (max-width: 1120px) {
+  .top-nav {
+    grid-template-columns: 180px 1fr auto;
+    padding: 0 var(--space-4);
+  }
+
+  .side-nav {
+    width: 220px;
+  }
+
+  .page-shell {
+    margin-left: 220px;
+    padding: var(--space-6) var(--space-6) var(--space-10);
+  }
+
+  .workspace-shell.is-collapsed .page-shell {
+    margin-left: 72px;
+  }
+}
+
+/* ---- Tablet portrait (<=900px) ---- */
+@media (max-width: 900px) {
+  .top-nav {
+    grid-template-columns: 1fr auto;
+    gap: var(--space-3);
+    height: auto;
+    min-height: 64px;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .top-links {
+    grid-column: 1 / -1;
+    order: 3;
+    overflow-x: auto;
+    padding-bottom: var(--space-1);
+    scrollbar-width: thin;
+  }
+
+  .side-nav {
+    display: none;
+  }
+
+  .workspace-shell {
+    padding-top: 104px;
+  }
+
+  .page-shell {
+    margin-left: 0;
+    min-height: calc(100vh - 104px);
+    padding: var(--space-5) var(--space-4) var(--space-8);
+  }
+
+  .workspace-shell.is-collapsed .page-shell {
+    margin-left: 0;
+  }
+
+  .kbs-grid > :nth-child(2),
+  .docs-grid > :nth-child(2),
+  .sessions-grid > :nth-child(2),
+  .kbs-grid > :nth-child(3),
+  .docs-grid > :nth-child(3),
+  .sessions-grid > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  .list-item {
+    flex-direction: column;
+  }
+
+  .row-gap {
+    min-width: 0;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  }
+
+  .qa-chat-card {
+    min-height: calc(100vh - 200px);
+  }
+
+  .qa-item {
+    max-width: 100%;
+  }
+}
+
+/* ---- Mobile (<=640px) ---- */
+@media (max-width: 640px) {
+  .top-nav {
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .brand {
+    font-size: var(--text-md);
+  }
+
+  .actions {
+    gap: var(--space-1);
+  }
+
+  .user-chip {
+    max-width: 100px;
+    padding: 0 var(--space-2);
+    height: 28px;
+    font-size: var(--text-xs);
+  }
+
+  .ghost-btn {
+    height: 28px;
+    padding: 0 var(--space-2);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+
+  .top-links a {
+    padding: 6px 10px;
+    font-size: var(--text-xs);
+  }
+
+  .workspace-shell {
+    padding-top: 100px;
+  }
+
+  .page-shell {
+    min-height: calc(100vh - 100px);
+    padding: var(--space-4) var(--space-3) var(--space-6);
+  }
+
+  .card {
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+  }
+
+  .card:hover {
+    transform: none;
+  }
+
+  .page-head {
+    gap: var(--space-2);
+  }
+
+  .page-head h1 {
+    font-size: clamp(1.3rem, 7vw, 1.8rem);
+  }
+
+  .page-head p {
+    font-size: var(--text-xs);
+  }
+
+  .inline-between {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .inline-between input {
+    width: 100%;
+  }
+
+  .list-item {
+    padding: var(--space-3);
+  }
+
+  /* Chat mobile */
+  .qa-chat-head {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .qa-stream {
+    padding: var(--space-4);
+  }
+
+  .qa-composer {
+    padding: var(--space-3) var(--space-4);
+    flex-direction: column;
+  }
+
+  .qa-composer textarea {
+    min-height: 36px;
+  }
+
+  .qa-composer button {
+    width: 100%;
+  }
+
+  .qa-item {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  /* Login mobile */
+  .login-card {
+    padding: var(--space-6);
+    border-radius: var(--radius-xl);
+  }
+
+  /* Modal mobile */
+  .doc-modal,
+  .qa-modal {
+    border-radius: var(--radius-lg);
+    margin: var(--space-2);
+  }
+
+  .doc-modal-backdrop,
+  .qa-modal-backdrop {
+    padding: var(--space-2);
+  }
+}
+
+/* ---- Small mobile (<=480px) ---- */
+@media (max-width: 480px) {
+  .top-nav {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .top-links {
+    width: 100%;
+  }
+
+  .top-links a {
+    font-size: 11px;
+  }
+
+  .workspace-shell {
+    padding-top: 116px;
+  }
+
+  .page-shell {
+    min-height: calc(100vh - 116px);
+  }
+
+  .row-gap button,
+  .row-gap .button-like {
+    min-height: 32px;
+    font-size: var(--text-xs);
+  }
+}

@@ -41,7 +41,11 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <form className="card login-card stack" onSubmit={onSubmit}>
-        <p className="eyebrow">Welcome to KnowledgeAI</p>
+        <div className="brand" style={{ marginBottom: '8px' }}>
+          <span className="brand-mark">K</span>
+          <span>KnowledgeAI</span>
+        </div>
+        <p className="eyebrow">Welcome back</p>
         <h1>登录控制台</h1>
         <p className="muted system-tip">MVP 默认账户: demo / demo123</p>
         <label>

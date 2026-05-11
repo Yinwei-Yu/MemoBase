@@ -13,7 +13,8 @@
       "Bash(npx tsc:*)",
       "Bash(npx vitest:*)",
       "Bash(go build:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(GIT_EDITOR=true git rebase:*)"
     ]
   }
 }

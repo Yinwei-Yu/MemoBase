@@ -112,7 +112,14 @@ export default function ChatPage() {
               <p className="muted qa-empty">输入问题后，这里会按一问一答展示聊天记录。</p>
             )}
             {messages.length === 0 && chatMutation.isPending && (
-              <p className="muted qa-empty">正在生成回答...</p>
+              <div className="qa-thinking">
+                <div className="typing-indicator">
+                  <span className="dot" />
+                  <span className="dot" />
+                  <span className="dot" />
+                </div>
+                <span className="qa-thinking-label">AI 正在思考...</span>
+              </div>
             )}
 
             {(() => {
@@ -152,6 +159,11 @@ export default function ChatPage() {
                                 onClick={() => setActiveCitation({ citation })}
                               >
                                 [{citationIndex + 1}] {citation.doc_title}
+                                {citation.snippet && (
+                                  <span className="qa-doc-link-tooltip">
+                                    {citation.snippet.length > 120 ? citation.snippet.slice(0, 120) + '...' : citation.snippet}
+                                  </span>
+                                )}
                               </button>
                             ))}
                             {messageCitations.length > MAX_VISIBLE_CITATIONS && (
@@ -165,6 +177,17 @@ export default function ChatPage() {
                 );
               });
             })()}
+
+            {chatMutation.isPending && messages.length > 0 && (
+              <div className="qa-thinking">
+                <div className="typing-indicator">
+                  <span className="dot" />
+                  <span className="dot" />
+                  <span className="dot" />
+                </div>
+                <span className="qa-thinking-label">AI 正在思考...</span>
+              </div>
+            )}
           </div>
 
           <form onSubmit={onSubmit} className="qa-composer">

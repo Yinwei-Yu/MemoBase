@@ -16,9 +16,27 @@
   box-shadow: var(--shadow-xs);
 }
 
+/* Gradient top-border stripe (Design DNA motif) */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--space-5);
+  right: var(--space-5);
+  height: 2px;
+  background: var(--gradient-accent-wide);
+  border-radius: 0 0 var(--radius-full) var(--radius-full);
+  opacity: 0;
+  transition: opacity var(--duration-normal) var(--ease-out);
+}
+
 .card:hover {
   border-color: var(--card-hover-border);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md), var(--glow-accent-sm);
+}
+
+.card:hover::before {
+  opacity: 1;
 }
 
 /* ---- Inputs ---- */
@@ -46,7 +64,7 @@ textarea::placeholder {
 input:focus,
 textarea:focus {
   border-color: var(--input-focus-border);
-  box-shadow: 0 0 0 3px var(--input-focus-ring);
+  box-shadow: 0 0 0 3px var(--input-focus-ring), inset 0 0 8px var(--input-focus-ring);
 }
 
 input[type="file"] {
@@ -99,18 +117,22 @@ button {
   font-size: var(--text-sm);
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(135deg, var(--accent-500), var(--accent-700));
+  background: var(--gradient-accent);
+  background-size: 200% 200%;
+  background-position: 0% 50%;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   padding: 10px var(--space-4);
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25);
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: all var(--duration-normal) var(--ease-out),
+              background-position var(--duration-slow) var(--ease-out);
 }
 
 button:hover {
-  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.35);
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.35), var(--glow-accent-sm);
   transform: translateY(-1px);
+  background-position: 100% 50%;
 }
 
 button:active {
@@ -186,6 +208,7 @@ button::before {
   gap: var(--space-4);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-primary);
+  border-left: 3px solid transparent;
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
   transition: all var(--duration-normal) var(--ease-out);
@@ -193,7 +216,9 @@ button::before {
 
 .list-item:hover {
   border-color: var(--border-secondary);
+  border-left-color: var(--accent-400);
   background: var(--bg-hover);
+  box-shadow: var(--shadow-sm);
 }
 
 .list-item.selected {

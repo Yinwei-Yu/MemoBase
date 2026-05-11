@@ -32,7 +32,12 @@ export default function TopNav() {
   return (
     <header className="top-nav">
       <div className="brand">
-        <span className="brand-mark">K</span>
+        <span className="brand-mark" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 2h4v5.5L11 2h2l-4.5 5.5L13 14h-2l-4-5.5V14H3V2z" fill="currentColor"/>
+            <circle cx="12.5" cy="3.5" r="1.5" fill="currentColor" opacity="0.6"/>
+          </svg>
+        </span>
         <span>KnowledgeAI</span>
       </div>
       <nav className="top-links">

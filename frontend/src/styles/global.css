@@ -10,3 +10,158 @@
 @import './components.css';
 @import './pages.css';
 @import './responsive.css';
+
+/* Ops Page - Tabs */
+.ops-tabs {
+  display: flex;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
+.tab-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--primary);
+}
+
+.tab-btn.active {
+  background: linear-gradient(135deg, rgba(56, 140, 255, 0.98), rgba(22, 99, 220, 0.98));
+  color: #fff;
+  border-color: rgba(110, 176, 255, 0.55);
+  box-shadow: 0 4px 12px -4px rgba(18, 84, 191, 0.7);
+}
+
+/* Ops Page - Status Grid */
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.status-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.status-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.status-card:has(.pill.success) .status-icon {
+  background: rgba(25, 135, 84, 0.1);
+  color: var(--ok);
+}
+
+.status-card:has(.pill.danger) .status-icon {
+  background: rgba(180, 35, 47, 0.1);
+  color: var(--danger);
+}
+
+.status-info h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.status-ok {
+  color: var(--ok);
+}
+
+.status-err {
+  color: var(--danger);
+}
+
+/* Ops Page - Metrics Grid */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.metric-card {
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  text-align: center;
+}
+
+.metric-title {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.metric-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.metric-ok .metric-value {
+  color: var(--ok);
+}
+
+.metric-warn .metric-value {
+  color: #d97706;
+}
+
+.metric-err .metric-value {
+  color: var(--danger);
+}
+
+.metric-info .metric-value {
+  color: var(--primary);
+}
+
+/* Ops Page - Grafana */
+.grafana-card {
+  min-height: 600px;
+}
+
+.grafana-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.grafana-header h2 {
+  margin: 0;
+}
+
+.grafana-iframe-container {
+  display: grid;
+  gap: 12px;
+}
+
+.grafana-iframe-container iframe {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.3);
+}

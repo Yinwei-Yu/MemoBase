@@ -42,6 +42,10 @@ func Logger(logger *slog.Logger) gin.HandlerFunc {
 			slog.String("path", c.FullPath()),
 			slog.Int("status", c.Writer.Status()),
 			slog.Int64("duration_ms", duration),
+			slog.String("client_ip", c.ClientIP()),
+			slog.String("user_agent", c.Request.UserAgent()),
+			slog.Int64("request_body_bytes", c.Request.ContentLength),
+			slog.Int("response_body_bytes", c.Writer.Size()),
 		)
 	}
 }
@@ -50,6 +54,12 @@ func AuthRequired(app *core.App) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
 		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+			app.Logger.Warn("auth_failed",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("reason", "missing_bearer_token"),
+				slog.String("client_ip", c.ClientIP()),
+				slog.String("path", c.Request.URL.Path),
+			)
 			util.Unauthorized(c, "missing bearer token")
 			c.Abort()
 			return
@@ -59,18 +69,34 @@ func AuthRequired(app *core.App) gin.HandlerFunc {
 			return []byte(app.Config.JWTSecret), nil
 		})
 		if err != nil || !token.Valid {
+			app.Logger.Warn("auth_failed",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("reason", "invalid_token"),
+				slog.String("client_ip", c.ClientIP()),
+				slog.String("path", c.Request.URL.Path),
+			)
 			util.Unauthorized(c, "invalid token")
 			c.Abort()
 			return
 		}
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
+			app.Logger.Warn("auth_failed",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("reason", "invalid_claims"),
+				slog.String("client_ip", c.ClientIP()),
+			)
 			util.Unauthorized(c, "invalid claims")
 			c.Abort()
 			return
 		}
 		userID, ok := claims["sub"].(string)
 		if !ok || userID == "" {
+			app.Logger.Warn("auth_failed",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("reason", "invalid_subject"),
+				slog.String("client_ip", c.ClientIP()),
+			)
 			util.Unauthorized(c, "invalid subject")
 			c.Abort()
 			return

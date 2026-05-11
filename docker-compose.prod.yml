@@ -41,3 +41,15 @@ services:
         limits:
           cpus: "1.0"
           memory: 256M
+
+  prometheus:
+    ports: []
+
+  grafana:
+    ports: []
+
+  cadvisor:
+    ports: []
+
+  node-exporter:
+    ports: []

@@ -28,7 +28,7 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:6333/collections >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -45,7 +45,7 @@ services:
       - ollama_data:/root/.ollama
     command: ["serve"]
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:11434/api/tags >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/11434'"]
       interval: 10s
       timeout: 5s
       retries: 20

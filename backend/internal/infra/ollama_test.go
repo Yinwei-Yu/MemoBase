@@ -3,11 +3,16 @@ package infra
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 )
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 type ollamaRoundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -26,7 +31,7 @@ func jsonResp(status int, body string) *http.Response {
 func TestOllamaChat(t *testing.T) {
 	t.Parallel()
 
-	client := NewOllamaClient("http://ollama.local", 2*time.Second)
+	client := NewOllamaClient("http://ollama.local", 2*time.Second, testLogger())
 	client.Client = &http.Client{
 		Transport: ollamaRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			if r.URL.Path != "/api/chat" {
@@ -48,7 +53,7 @@ func TestOllamaChat(t *testing.T) {
 func TestOllamaChatStatusError(t *testing.T) {
 	t.Parallel()
 
-	client := NewOllamaClient("http://ollama.local", 2*time.Second)
+	client := NewOllamaClient("http://ollama.local", 2*time.Second, testLogger())
 	client.Client = &http.Client{
 		Transport: ollamaRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			return jsonResp(http.StatusBadGateway, `{}`), nil
@@ -66,7 +71,7 @@ func TestOllamaEmbed(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
-		client := NewOllamaClient("http://ollama.local", 2*time.Second)
+		client := NewOllamaClient("http://ollama.local", 2*time.Second, testLogger())
 		client.Client = &http.Client{
 			Transport: ollamaRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 				if r.URL.Path != "/api/embeddings" {
@@ -87,7 +92,7 @@ func TestOllamaEmbed(t *testing.T) {
 
 	t.Run("empty embedding", func(t *testing.T) {
 		t.Parallel()
-		client := NewOllamaClient("http://ollama.local", 2*time.Second)
+		client := NewOllamaClient("http://ollama.local", 2*time.Second, testLogger())
 		client.Client = &http.Client{
 			Transport: ollamaRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 				return jsonResp(http.StatusOK, `{"embedding":[]}`), nil
@@ -106,7 +111,7 @@ func TestOllamaReady(t *testing.T) {
 
 	t.Run("up", func(t *testing.T) {
 		t.Parallel()
-		client := NewOllamaClient("http://ollama.local", 2*time.Second)
+		client := NewOllamaClient("http://ollama.local", 2*time.Second, testLogger())
 		client.Client = &http.Client{
 			Transport: ollamaRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 				if r.URL.Path != "/api/tags" {
@@ -122,7 +127,7 @@ func TestOllamaReady(t *testing.T) {
 
 	t.Run("down", func(t *testing.T) {
 		t.Parallel()
-		client := NewOllamaClient("http://ollama.local", 2*time.Second)
+		client := NewOllamaClient("http://ollama.local", 2*time.Second, testLogger())
 		client.Client = &http.Client{
 			Transport: ollamaRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 				return jsonResp(http.StatusServiceUnavailable, `{}`), nil

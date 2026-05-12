@@ -53,8 +53,8 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		Logger: logger,
 		DB:     db,
 		Store:  st,
-		Qdrant: infra.NewQdrantClient(cfg.QdrantURL),
-		Ollama: infra.NewOllamaClient(cfg.OllamaURL, cfg.OllamaTimeout),
+		Qdrant: infra.NewQdrantClient(cfg.QdrantURL, logger),
+		Ollama: infra.NewOllamaClient(cfg.OllamaURL, cfg.OllamaTimeout, logger),
 	}
 	return app, nil
 }
@@ -190,6 +190,7 @@ type RetrievedChunk struct {
 }
 
 func (a *App) RetrieveChunks(ctx context.Context, kbID, query string, topK int) ([]RetrievedChunk, bool, error) {
+	startedAt := time.Now()
 	if topK <= 0 {
 		topK = 6
 	}
@@ -199,8 +200,17 @@ func (a *App) RetrieveChunks(ctx context.Context, kbID, query string, topK int) 
 	}
 	chunks, err := a.Store.GetChunksByKB(ctx, kbID, limit)
 	if err != nil {
+		a.Logger.Error("retrieve_chunks_db_failed",
+			slog.String("kb_id", kbID),
+			slog.String("error", err.Error()),
+		)
 		return nil, false, err
 	}
+	a.Logger.Debug("retrieve_chunks_loaded",
+		slog.String("kb_id", kbID),
+		slog.Int("total_chunks", len(chunks)),
+	)
+
 	bm25Raw := map[string]float64{}
 	for _, c := range chunks {
 		bm25Raw[c.ID] = bm25LikeScore(query, c.Content)
@@ -213,9 +223,17 @@ func (a *App) RetrieveChunks(ctx context.Context, kbID, query string, topK int) 
 		if vectorRaw, err := a.Qdrant.Search(ctx, collection, emb, topK*3); err == nil {
 			vectorNorm = normalizeScores(vectorRaw)
 		} else {
+			a.Logger.Warn("vector_search_failed",
+				slog.String("kb_id", kbID),
+				slog.String("error", err.Error()),
+			)
 			degraded = true
 		}
 	} else {
+		a.Logger.Warn("embed_query_failed",
+			slog.String("kb_id", kbID),
+			slog.String("error", err.Error()),
+		)
 		degraded = true
 	}
 	type scored struct {
@@ -247,14 +265,31 @@ func (a *App) RetrieveChunks(ctx context.Context, kbID, query string, topK int) 
 	for _, x := range all {
 		result = append(result, RetrievedChunk{Chunk: x.chunk, Score: x.score, Src: x.src})
 	}
+
+	a.Logger.Info("retrieve_chunks_completed",
+		slog.String("kb_id", kbID),
+		slog.Int("chunks_returned", len(result)),
+		slog.Bool("degraded", degraded),
+		slog.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
+	)
 	return result, degraded, nil
 }
 
 func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, overlap int) {
+	startedAt := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
+
+	a.Logger.Info("document_processing_started",
+		slog.String("task_id", taskID),
+		slog.String("kb_id", kbID),
+		slog.String("doc_id", docID),
+		slog.Int("chunk_size", chunkSize),
+		slog.Int("overlap", overlap),
+	)
 	_ = a.Store.UpdateTask(ctx, taskID, "processing", 10, nil, nil)
 	_ = a.Store.UpdateDocumentStatus(ctx, docID, "processing")
+
 	content, err := readTextFile(filePath)
 	if err != nil {
 		a.failTask(ctx, taskID, docID, "READ_FILE_FAILED", err.Error())
@@ -266,6 +301,12 @@ func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, o
 		return
 	}
 	_ = a.Store.UpdateDocumentContent(ctx, docID, content)
+	a.Logger.Debug("document_content_loaded",
+		slog.String("task_id", taskID),
+		slog.String("doc_id", docID),
+		slog.Int("content_length", len(content)),
+	)
+
 	chunks := splitIntoChunks(content, chunkSize, overlap)
 	dbChunks := make([]store.Chunk, 0, len(chunks))
 	for i, chunk := range chunks {
@@ -281,12 +322,18 @@ func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, o
 		a.failTask(ctx, taskID, docID, "DB_CHUNK_WRITE_FAILED", err.Error())
 		return
 	}
+	a.Logger.Info("document_chunks_created",
+		slog.String("task_id", taskID),
+		slog.String("doc_id", docID),
+		slog.Int("chunks_count", len(dbChunks)),
+	)
 	_ = a.Store.UpdateTask(ctx, taskID, "processing", 60, nil, nil)
+
 	points := make([]infra.QdrantPoint, 0, len(dbChunks))
 	collection := a.QdrantCollectionForKB(kbID)
 	collectionEnsured := false
 	expectedDim := 0
-	for _, c := range dbChunks {
+	for i, c := range dbChunks {
 		emb, err := a.Ollama.Embed(ctx, a.Config.OllamaEmbedModel, c.Content)
 		if err != nil {
 			a.failTask(ctx, taskID, docID, "OLLAMA_EMBED_FAILED", err.Error())
@@ -316,7 +363,16 @@ func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, o
 				"created_at":  time.Now().UTC().Format(time.RFC3339),
 			},
 		})
+		if (i+1)%50 == 0 {
+			a.Logger.Debug("document_embedding_progress",
+				slog.String("task_id", taskID),
+				slog.String("doc_id", docID),
+				slog.Int("embedded", i+1),
+				slog.Int("total", len(dbChunks)),
+			)
+		}
 	}
+
 	if err := a.Qdrant.DeleteByDoc(ctx, collection, docID); err != nil {
 		a.Logger.Warn("qdrant_delete_old_points_failed",
 			slog.String("doc_id", docID),
@@ -329,6 +385,15 @@ func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, o
 	}
 	_ = a.Store.UpdateDocumentStatus(ctx, docID, "indexed")
 	_ = a.Store.UpdateTask(ctx, taskID, "succeeded", 100, nil, nil)
+
+	a.Logger.Info("document_processing_completed",
+		slog.String("task_id", taskID),
+		slog.String("kb_id", kbID),
+		slog.String("doc_id", docID),
+		slog.Int("chunks_indexed", len(points)),
+		slog.String("collection", collection),
+		slog.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
+	)
 }
 
 func qdrantPointID(chunkID string) string {

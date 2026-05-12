@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -146,14 +147,30 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 		}
 		user, err := app.VerifyUser(c.Request.Context(), req.Username, req.Password)
 		if err != nil {
+			app.Logger.Warn("login_failed",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("username", req.Username),
+				slog.String("client_ip", c.ClientIP()),
+			)
 			util.Unauthorized(c, "invalid credentials")
 			return
 		}
 		token, err := util.SignToken(app.Config.JWTSecret, user.ID, app.Config.TokenTTL)
 		if err != nil {
+			app.Logger.Error("token_sign_failed",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("user_id", user.ID),
+				slog.String("error", err.Error()),
+			)
 			util.Internal(c, "failed to sign token")
 			return
 		}
+		app.Logger.Info("login_success",
+			slog.String("request_id", util.RequestID(c)),
+			slog.String("user_id", user.ID),
+			slog.String("username", user.Username),
+			slog.String("client_ip", c.ClientIP()),
+		)
 		util.Success(c, http.StatusOK, gin.H{
 			"access_token":  token,
 			"refresh_token": "",
@@ -236,9 +253,21 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 		}
 		kb, err := app.Store.CreateKB(c.Request.Context(), userIDFrom(c), name, description, tags)
 		if err != nil {
+			app.Logger.Error("kb_create_failed",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("user_id", userIDFrom(c)),
+				slog.String("name", name),
+				slog.String("error", err.Error()),
+			)
 			util.Internal(c, "failed to create knowledge base")
 			return
 		}
+		app.Logger.Info("kb_created",
+			slog.String("request_id", util.RequestID(c)),
+			slog.String("user_id", userIDFrom(c)),
+			slog.String("kb_id", kb.ID),
+			slog.String("name", name),
+		)
 		util.Success(c, http.StatusCreated, kb)
 	})
 
@@ -301,10 +330,21 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 	authed.DELETE("/knowledge-bases/:kb_id", func(c *gin.Context) {
 		kbID := c.Param("kb_id")
 		if err := app.Store.DeleteKB(c.Request.Context(), kbID); err != nil {
+			app.Logger.Error("kb_delete_failed",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("user_id", userIDFrom(c)),
+				slog.String("kb_id", kbID),
+				slog.String("error", err.Error()),
+			)
 			util.Internal(c, "failed to delete knowledge base")
 			return
 		}
 		_ = app.Qdrant.DeleteCollection(c.Request.Context(), app.QdrantCollectionForKB(kbID))
+		app.Logger.Info("kb_deleted",
+			slog.String("request_id", util.RequestID(c)),
+			slog.String("user_id", userIDFrom(c)),
+			slog.String("kb_id", kbID),
+		)
 		util.Success(c, http.StatusOK, gin.H{"deleted": true})
 	})
 
@@ -391,6 +431,15 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			}
 
 			go app.ProcessDocument(task.ID, kbID, doc.ID, path, chunkSize, overlap)
+			app.Logger.Info("document_upload_started",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("user_id", userIDFrom(c)),
+				slog.String("kb_id", kbID),
+				slog.String("doc_id", doc.ID),
+				slog.String("file_name", fileHeader.Filename),
+				slog.Int64("file_size", fileHeader.Size),
+				slog.String("task_id", task.ID),
+			)
 			items = append(items, uploadDocumentItem{
 				DocID:     doc.ID,
 				KBID:      kbID,
@@ -447,10 +496,23 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 		kbID := c.Param("kb_id")
 		docID := c.Param("doc_id")
 		if err := app.Store.DeleteDocument(c.Request.Context(), kbID, docID); err != nil {
+			app.Logger.Error("document_delete_failed",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("user_id", userIDFrom(c)),
+				slog.String("kb_id", kbID),
+				slog.String("doc_id", docID),
+				slog.String("error", err.Error()),
+			)
 			util.Internal(c, "failed to delete document")
 			return
 		}
 		_ = app.Qdrant.DeleteByDoc(c.Request.Context(), app.QdrantCollectionForKB(kbID), docID)
+		app.Logger.Info("document_deleted",
+			slog.String("request_id", util.RequestID(c)),
+			slog.String("user_id", userIDFrom(c)),
+			slog.String("kb_id", kbID),
+			slog.String("doc_id", docID),
+		)
 		util.Success(c, http.StatusOK, gin.H{"deleted": true})
 	})
 
@@ -467,6 +529,13 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			return
 		}
 		go app.ProcessDocument(task.ID, doc.KBID, doc.ID, filePath, 500, 100)
+		app.Logger.Info("document_reindex_started",
+			slog.String("request_id", util.RequestID(c)),
+			slog.String("user_id", userIDFrom(c)),
+			slog.String("kb_id", doc.KBID),
+			slog.String("doc_id", doc.ID),
+			slog.String("task_id", task.ID),
+		)
 		util.Success(c, http.StatusOK, gin.H{"task_id": task.ID})
 	})
 
@@ -498,9 +567,22 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 		}
 		s, err := app.Store.CreateSession(c.Request.Context(), req.KBID, req.Title)
 		if err != nil {
+			app.Logger.Error("session_create_failed",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("user_id", userIDFrom(c)),
+				slog.String("kb_id", req.KBID),
+				slog.String("error", err.Error()),
+			)
 			util.Internal(c, "failed to create session")
 			return
 		}
+		app.Logger.Info("session_created",
+			slog.String("request_id", util.RequestID(c)),
+			slog.String("user_id", userIDFrom(c)),
+			slog.String("kb_id", req.KBID),
+			slog.String("session_id", s.ID),
+			slog.String("title", req.Title),
+		)
 		util.Success(c, http.StatusCreated, s)
 	})
 
@@ -538,10 +620,22 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 	})
 
 	authed.DELETE("/sessions/:session_id", func(c *gin.Context) {
-		if err := app.Store.DeleteSession(c.Request.Context(), c.Param("session_id")); err != nil {
+		sessionID := c.Param("session_id")
+		if err := app.Store.DeleteSession(c.Request.Context(), sessionID); err != nil {
+			app.Logger.Error("session_delete_failed",
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("user_id", userIDFrom(c)),
+				slog.String("session_id", sessionID),
+				slog.String("error", err.Error()),
+			)
 			util.Internal(c, "failed to delete session")
 			return
 		}
+		app.Logger.Info("session_deleted",
+			slog.String("request_id", util.RequestID(c)),
+			slog.String("user_id", userIDFrom(c)),
+			slog.String("session_id", sessionID),
+		)
 		util.Success(c, http.StatusOK, gin.H{"deleted": true})
 	})
 
@@ -604,31 +698,55 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			return
 		}
 
+		app.Logger.Info("chat_request_started",
+			slog.String("request_id", util.RequestID(c)),
+			slog.String("user_id", userIDFrom(c)),
+			slog.String("kb_id", req.KBID),
+			slog.String("session_id", sessionID),
+			slog.String("model", model),
+			slog.Int("top_k", topK),
+		)
+
 		chunks, retrievalDegraded, err := app.RetrieveChunks(c.Request.Context(), req.KBID, question, topK)
 		if err != nil {
 			app.Logger.Error("retrieval_failed",
-				"request_id", util.RequestID(c),
-				"kb_id", req.KBID,
-				"error_code", "QDRANT_UNAVAILABLE",
-				"error", err.Error(),
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("kb_id", req.KBID),
+				slog.String("error_code", "QDRANT_UNAVAILABLE"),
+				slog.String("error", err.Error()),
 			)
 			util.Fail(c, http.StatusServiceUnavailable, "QDRANT_UNAVAILABLE", "retrieval failed", nil)
 			return
 		}
+		app.Logger.Info("retrieval_completed",
+			slog.String("request_id", util.RequestID(c)),
+			slog.String("kb_id", req.KBID),
+			slog.Int("chunks_retrieved", len(chunks)),
+			slog.Bool("degraded", retrievalDegraded),
+		)
+
 		degraded := retrievalDegraded
 		memories, _ := app.Store.ListSessionMemories(c.Request.Context(), sessionID, 5)
 		prompt := app.BuildChatPrompt(question, chunks, memories)
 		answer, promptT, completionT, err := app.Ollama.Chat(c.Request.Context(), model, prompt)
 		if err != nil {
 			app.Logger.Error("model_chat_failed",
-				"request_id", util.RequestID(c),
-				"session_id", sessionID,
-				"error_code", "MODEL_UNAVAILABLE",
-				"error", err.Error(),
+				slog.String("request_id", util.RequestID(c)),
+				slog.String("session_id", sessionID),
+				slog.String("model", model),
+				slog.String("error_code", "MODEL_UNAVAILABLE"),
+				slog.String("error", err.Error()),
 			)
 			util.Fail(c, http.StatusServiceUnavailable, "MODEL_UNAVAILABLE", "ollama chat failed", nil)
 			return
 		}
+		app.Logger.Info("model_chat_completed",
+			slog.String("request_id", util.RequestID(c)),
+			slog.String("session_id", sessionID),
+			slog.String("model", model),
+			slog.Int("prompt_tokens", promptT),
+			slog.Int("completion_tokens", completionT),
+		)
 
 		if _, err := app.Store.CreateMessage(c.Request.Context(), sessionID, "assistant", answer); err != nil {
 			util.Internal(c, "failed to write assistant message")
@@ -664,6 +782,21 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			}
 		}
 
+		latencyMs := time.Since(startedAt).Milliseconds()
+		app.Logger.Info("chat_request_completed",
+			slog.String("request_id", util.RequestID(c)),
+			slog.String("user_id", userIDFrom(c)),
+			slog.String("kb_id", req.KBID),
+			slog.String("session_id", sessionID),
+			slog.String("model", model),
+			slog.Int("citations_count", len(citations)),
+			slog.Int("memories_count", len(memories)),
+			slog.Bool("degraded", degraded),
+			slog.Int64("latency_ms", latencyMs),
+			slog.Int("prompt_tokens", promptT),
+			slog.Int("completion_tokens", completionT),
+		)
+
 		util.Success(c, http.StatusOK, gin.H{
 			"session_id":  sessionID,
 			"answer":      answer,
@@ -671,7 +804,7 @@ func RegisterRoutes(r *gin.Engine, app *core.App) {
 			"memory_used": memories,
 			"trace_id":    traceID,
 			"degraded":    degraded,
-			"latency_ms":  time.Since(startedAt).Milliseconds(),
+			"latency_ms":  latencyMs,
 			"token_usage": core.TokenUsage{PromptTokens: promptT, CompletionTokens: completionT, TotalTokens: promptT + completionT},
 		})
 	})

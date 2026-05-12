@@ -35,11 +35,21 @@ MVP 不引入：OpenSearch / MinIO / Redis / Viper / Nginx。
 │   │   ├── api               # 路由与 handler
 │   │   ├── core              # 文档处理、检索、聊天编排
 │   │   ├── infra             # DB / Qdrant / Ollama 客户端
+│   │   ├── observability     # HTTP 指标中间件
 │   │   └── store             # PostgreSQL 数据访问
 │   └── migrations/           # 初始化 SQL
 ├── frontend/                 # React 前端
 │   └── src/pages             # 登录/知识库/文档/问答/会话/运维页面
+├── monitoring/               # 监控配置
+│   ├── prometheus.yml        # Prometheus 采集配置
+│   └── grafana/              # Grafana 配置
+│       ├── dashboards/       # Dashboard JSON
+│       └── provisioning/     # 数据源与 Dashboard 自动配置
+├── scripts/                  # 运维脚本
+│   ├── backup.sh             # 备份脚本
+│   └── restore.sh            # 恢复脚本
 ├── docker-compose.yml
+├── docker-compose.prod.yml
 └── doc/接口文档（MVP）.md     # API 契约文档
 ```
 
@@ -62,6 +72,10 @@ docker compose up -d --build
 - Postgres：`localhost:5432`
 - Qdrant：<http://localhost:6333>
 - Ollama：<http://localhost:11434>
+- Prometheus：<http://localhost:9090>
+- Grafana：<http://localhost:3000>（admin/admin）
+- cAdvisor：<http://localhost:8081>
+- Node Exporter：<http://localhost:9100>
 
 ### 4.3 启动服务（生产配置覆盖）
 
@@ -166,6 +180,44 @@ OLLAMA_TIMEOUT_SEC=120
 
 详细契约见：
 - [doc/接口文档（MVP）.md](doc/接口文档（MVP）.md)
+
+## 8.1 监控系统
+
+项目集成了完整的监控栈：
+
+### 组件
+
+| 组件 | 端口 | 用途 |
+|---|---|---|
+| Prometheus | 9090 | 指标采集与存储 |
+| Grafana | 3000 | 可视化 Dashboard |
+| cAdvisor | 8081 | 容器资源监控 |
+| Node Exporter | 9100 | 主机指标监控 |
+
+### 采集的指标
+
+- **应用指标**：HTTP 请求总数、请求延迟、在途请求数
+- **容器指标**：CPU 使用率、内存使用量、网络 I/O
+- **主机指标**：磁盘使用、系统负载、网络流量
+
+### Grafana Dashboard
+
+预置了 MemoBase Overview Dashboard，包含：
+- 服务状态
+- 在途请求数
+- 按状态码的请求速率
+- 按路由的请求延迟
+- 容器内存使用
+- 容器 CPU 使用
+
+访问 Grafana：<http://localhost:3000>（默认账号 admin/admin）
+
+### 日志配置
+
+所有服务配置了 json-file 日志驱动：
+- 单个日志文件最大 10MB
+- 保留最近 3-5 个日志文件
+- 自动轮转，防止磁盘占满
 
 ## 9. 常见问题
 

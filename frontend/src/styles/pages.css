@@ -608,69 +608,157 @@
   color: var(--text-primary);
 }
 
-.ops-grid .list-item {
+/* ---- Ops Tabs ---- */
+.ops-tabs {
+  display: flex;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
+.tab-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--accent);
+}
+
+.tab-btn.active {
+  background: linear-gradient(135deg, rgba(56, 140, 255, 0.98), rgba(22, 99, 220, 0.98));
+  color: #fff;
+  border-color: rgba(110, 176, 255, 0.55);
+  box-shadow: 0 4px 12px -4px rgba(18, 84, 191, 0.7);
+}
+
+/* ---- Status Grid ---- */
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.status-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.status-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.status-card:has(.pill.success) .status-icon {
+  background: rgba(25, 135, 84, 0.1);
+  color: var(--color-success);
+}
+
+.status-card:has(.pill.danger) .status-icon {
+  background: rgba(180, 35, 47, 0.1);
+  color: var(--color-danger);
+}
+
+.status-info h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.status-ok {
+  color: var(--color-success);
+}
+
+.status-err {
+  color: var(--color-danger);
+}
+
+/* ---- Metrics Grid ---- */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.metric-card {
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  text-align: center;
+}
+
+.metric-title {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.metric-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.metric-ok .metric-value {
+  color: var(--color-success);
+}
+
+.metric-warn .metric-value {
+  color: var(--color-warning);
+}
+
+.metric-err .metric-value {
+  color: var(--color-danger);
+}
+
+.metric-info .metric-value {
+  color: var(--accent);
+}
+
+/* ---- Grafana ---- */
+.grafana-card {
+  min-height: 600px;
+}
+
+.grafana-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 16px;
 }
 
-.ops-grid .list-item h3 {
-  font-weight: 600;
-  font-size: var(--text-sm);
-  text-transform: capitalize;
+.grafana-header h2 {
+  margin: 0;
 }
 
-/* ---- Status indicator dot ---- */
-.status-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  margin-right: var(--space-2);
+.grafana-iframe-container {
+  display: grid;
+  gap: 12px;
 }
 
-.status-dot.up {
-  background: var(--color-success);
-  box-shadow: 0 0 6px rgba(5, 150, 105, 0.4);
-}
-
-.status-dot.down {
-  background: var(--color-danger);
-  box-shadow: 0 0 6px rgba(220, 38, 38, 0.4);
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
-/* More vivid status dots in dark mode */
-[data-theme="dark"] .status-dot.up {
-  background: #34d399;
-  box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
-}
-
-[data-theme="dark"] .status-dot.down {
-  background: #fb7185;
-  box-shadow: 0 0 8px rgba(251, 113, 133, 0.5);
-}
-
-/* ---- Overall status banner ---- */
-.status-banner {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  border-radius: var(--radius-lg);
-  margin-bottom: var(--space-4);
-  font-weight: 600;
-  font-size: var(--text-md);
-}
-
-.status-banner.healthy {
-  background: var(--color-success-bg);
-  color: var(--color-success);
-  border: 1px solid rgba(5, 150, 105, 0.2);
-}
-
-.status-banner.unhealthy {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-  border: 1px solid rgba(220, 38, 38, 0.2);
+.grafana-iframe-container iframe {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.3);
 }

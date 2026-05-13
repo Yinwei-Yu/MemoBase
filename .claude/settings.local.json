@@ -14,7 +14,10 @@
       "Bash(npx vitest:*)",
       "Bash(go build:*)",
       "Bash(git:*)",
-      "Bash(GIT_EDITOR=true git rebase:*)"
+      "Bash(GIT_EDITOR=true git rebase:*)",
+      "Bash(ls /Users/mirai/developer/memo-docker/backend/proto*.go)",
+      "Bash(gofmt -e internal/api/middleware.go)",
+      "Bash(gofmt:*)"
     ]
   }
 }

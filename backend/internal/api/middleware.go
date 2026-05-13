@@ -26,27 +26,57 @@ func RequestID() gin.HandlerFunc {
 	}
 }
 
+var skipLogPaths = map[string]bool{
+	"/api/v1/healthz":         true,
+	"/api/v1/readyz":          true,
+	"/api/v1/metrics":         true,
+	"/api/v1/metrics/summary": true,
+}
+
 func Logger(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
-		duration := time.Since(start).Milliseconds()
+
 		operation := c.FullPath()
+		if skipLogPaths[operation] {
+			return
+		}
 		if operation == "" {
 			operation = c.Request.URL.Path
 		}
-		logger.Info("http_request",
+
+		status := c.Writer.Status()
+		attrs := []slog.Attr{
 			slog.String("request_id", util.RequestID(c)),
 			slog.String("operation", operation),
 			slog.String("method", c.Request.Method),
 			slog.String("path", c.FullPath()),
-			slog.Int("status", c.Writer.Status()),
-			slog.Int64("duration_ms", duration),
+			slog.Int("status", status),
+			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 			slog.String("client_ip", c.ClientIP()),
 			slog.String("user_agent", c.Request.UserAgent()),
 			slog.Int64("request_body_bytes", c.Request.ContentLength),
 			slog.Int("response_body_bytes", c.Writer.Size()),
-		)
+		}
+
+		userID, _ := c.Get("user_id")
+		if s, ok := userID.(string); ok && s != "" {
+			attrs = append(attrs, slog.String("user_id", s))
+		}
+
+		for _, e := range c.Errors {
+			attrs = append(attrs, slog.String("gin_error", e.Err.Error()))
+		}
+
+		switch {
+		case status >= 500:
+			logger.LogAttrs(nil, slog.LevelError, "http_request", attrs...)
+		case status >= 400:
+			logger.LogAttrs(nil, slog.LevelWarn, "http_request", attrs...)
+		default:
+			logger.LogAttrs(nil, slog.LevelDebug, "http_request", attrs...)
+		}
 	}
 }
 

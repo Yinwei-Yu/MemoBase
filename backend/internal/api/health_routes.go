@@ -23,7 +23,14 @@ func (healthRegistrar) Register(public *gin.RouterGroup, _ *gin.RouterGroup, app
 	public.GET("/healthz", handleHealthz())
 	public.GET("/readyz", handleReadyz(app))
 	public.GET("/metrics", observability.PrometheusHandler())
-}
+		public.GET("/metrics/summary", handleMetricsSummary())
+	}
+
+	func handleMetricsSummary() gin.HandlerFunc {
+		return func(c *gin.Context) {
+			util.Success(c, http.StatusOK, observability.Snapshot())
+		}
+	}
 
 func handleHealthz() gin.HandlerFunc {
 	return func(c *gin.Context) {

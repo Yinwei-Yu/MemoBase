@@ -42,7 +42,7 @@ export type DocumentItem = {
   kb_id: string;
   title: string;
   file_name: string;
-  status: 'pending' | 'processing' | 'indexed' | 'failed' | 'deleted';
+  status: "pending" | "processing" | "indexed" | "failed" | "deleted";
   created_at: string;
   updated_at: string;
 };
@@ -52,7 +52,7 @@ export type DocumentContent = {
   kb_id: string;
   title: string;
   file_name: string;
-  status: 'pending' | 'processing' | 'indexed' | 'failed' | 'deleted';
+  status: "pending" | "processing" | "indexed" | "failed" | "deleted";
   content_text: string;
   created_at: string;
   updated_at: string;
@@ -61,7 +61,7 @@ export type DocumentContent = {
 export type Task = {
   task_id: string;
   type: string;
-  status: 'pending' | 'processing' | 'succeeded' | 'failed';
+  status: "pending" | "processing" | "succeeded" | "failed";
   progress: number;
   error_code?: string | null;
   error_message?: string | null;
@@ -112,7 +112,7 @@ export type SessionItem = {
 export type MessageItem = {
   message_id: string;
   session_id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   created_at: string;
 };
@@ -122,4 +122,45 @@ export type TraceItem = {
   session_id: string;
   steps: Array<Record<string, unknown>>;
   created_at: string;
+};
+
+// ── SSE Streaming types ─────────────────────────────────────────────────────
+
+export type ChatStreamStepEvent = {
+  type: "step";
+  node: string;
+  status: string;
+  detail?: string;
+};
+
+export type ChatStreamTokenEvent = {
+  type: "token";
+  token: string;
+  index?: number;
+};
+
+export type ChatStreamResultEvent = {
+  type: "result";
+  answer: string;
+  degraded?: boolean;
+  latency_ms?: number;
+  citations?: Citation[];
+};
+
+export type ChatStreamErrorEvent = {
+  type: "error";
+  code?: string;
+  message: string;
+};
+
+export type ChatStreamEvent =
+  | ChatStreamStepEvent
+  | ChatStreamTokenEvent
+  | ChatStreamResultEvent
+  | ChatStreamErrorEvent;
+
+export type AgentStep = {
+  node: string;
+  status: "started" | "completed" | "skipped" | "error";
+  detail: string;
 };

@@ -154,7 +154,7 @@ func (s *Store) CreateKB(ctx context.Context, userID, name, description string, 
 	if err != nil {
 		return kb, err
 	}
-	return s.GetKB(ctx, kb.ID)
+	return s.GetKB(ctx, userID, kb.ID)
 }
 
 func (s *Store) ListKB(ctx context.Context, userID string, limit, offset int, keyword string) ([]KnowledgeBase, int, error) {
@@ -186,7 +186,7 @@ func (s *Store) ListKB(ctx context.Context, userID string, limit, offset int, ke
 	return rows, total, nil
 }
 
-func (s *Store) GetKB(ctx context.Context, kbID string) (KnowledgeBase, error) {
+func (s *Store) GetKB(ctx context.Context, userID, kbID string) (KnowledgeBase, error) {
 	var kb KnowledgeBase
 	err := s.DB.GetContext(ctx, &kb, `
 		SELECT kb.id, kb.user_id, kb.name, kb.description, kb.tags,
@@ -195,8 +195,8 @@ func (s *Store) GetKB(ctx context.Context, kbID string) (KnowledgeBase, error) {
 		LEFT JOIN (
 			SELECT kb_id, COUNT(1) AS doc_count FROM documents WHERE deleted_at IS NULL GROUP BY kb_id
 		) d ON d.kb_id = kb.id
-		WHERE kb.id=$1 AND kb.deleted_at IS NULL
-	`, kbID)
+		WHERE kb.id=$1 AND kb.user_id=$2 AND kb.deleted_at IS NULL
+	`, kbID, userID)
 	if err != nil {
 		return kb, err
 	}
@@ -204,11 +204,11 @@ func (s *Store) GetKB(ctx context.Context, kbID string) (KnowledgeBase, error) {
 	return kb, nil
 }
 
-func (s *Store) PatchKB(ctx context.Context, kbID string, name, description *string, tags *[]string) (KnowledgeBase, error) {
+func (s *Store) PatchKB(ctx context.Context, userID, kbID string, name, description *string, tags *[]string) (KnowledgeBase, error) {
 	sets := make([]string, 0, 4)
 	args := make([]interface{}, 0, 4)
-	args = append(args, kbID)
-	argPos := 2
+	args = append(args, kbID, userID)
+	argPos := 3
 
 	if name != nil {
 		sets = append(sets, fmt.Sprintf("name=$%d", argPos))
@@ -227,14 +227,14 @@ func (s *Store) PatchKB(ctx context.Context, kbID string, name, description *str
 		argPos++
 	}
 	if len(sets) == 0 {
-		return s.GetKB(ctx, kbID)
+		return s.GetKB(ctx, userID, kbID)
 	}
 	sets = append(sets, "updated_at=NOW()")
 
 	query := fmt.Sprintf(`
 		UPDATE knowledge_bases
 		SET %s
-		WHERE id=$1 AND deleted_at IS NULL
+		WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL
 	`, strings.Join(sets, ", "))
 	res, err := s.DB.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -244,11 +244,11 @@ func (s *Store) PatchKB(ctx context.Context, kbID string, name, description *str
 	if affected == 0 {
 		return KnowledgeBase{}, sql.ErrNoRows
 	}
-	return s.GetKB(ctx, kbID)
+	return s.GetKB(ctx, userID, kbID)
 }
 
-func (s *Store) DeleteKB(ctx context.Context, kbID string) error {
-	_, err := s.DB.ExecContext(ctx, `UPDATE knowledge_bases SET deleted_at=NOW() WHERE id=$1`, kbID)
+func (s *Store) DeleteKB(ctx context.Context, userID, kbID string) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE knowledge_bases SET deleted_at=NOW() WHERE id=$1 AND user_id=$2`, kbID, userID)
 	return err
 }
 
@@ -417,7 +417,10 @@ func (s *Store) GetTask(ctx context.Context, taskID string) (Task, error) {
 	return task, nil
 }
 
-func (s *Store) CreateSession(ctx context.Context, kbID, title string) (Session, error) {
+func (s *Store) CreateSession(ctx context.Context, userID, kbID, title string) (Session, error) {
+	if _, err := s.GetKB(ctx, userID, kbID); err != nil {
+		return Session{}, err
+	}
 	sess := Session{ID: "sess_" + uuid.NewString(), KBID: kbID, Title: title}
 	_, err := s.DB.ExecContext(ctx, `
 		INSERT INTO sessions (id, kb_id, title)
@@ -426,43 +429,59 @@ func (s *Store) CreateSession(ctx context.Context, kbID, title string) (Session,
 	if err != nil {
 		return sess, err
 	}
-	return s.GetSession(ctx, sess.ID)
+	return s.GetSession(ctx, userID, sess.ID)
 }
 
-func (s *Store) GetSession(ctx context.Context, sessionID string) (Session, error) {
+func (s *Store) GetSession(ctx context.Context, userID, sessionID string) (Session, error) {
 	var sess Session
 	err := s.DB.GetContext(ctx, &sess, `
-		SELECT id, kb_id, title, created_at, updated_at
-		FROM sessions WHERE id=$1 AND deleted_at IS NULL
-	`, sessionID)
+		SELECT s.id, s.kb_id, s.title, s.created_at, s.updated_at
+		FROM sessions s
+		INNER JOIN knowledge_bases kb ON kb.id = s.kb_id
+		WHERE s.id=$1 AND kb.user_id=$2 AND kb.deleted_at IS NULL AND s.deleted_at IS NULL
+	`, sessionID, userID)
 	return sess, err
 }
 
-func (s *Store) ListSessions(ctx context.Context, kbID string, limit, offset int) ([]Session, int, error) {
+func (s *Store) ListSessions(ctx context.Context, userID, kbID string, limit, offset int) ([]Session, int, error) {
 	sessions := []Session{}
 	if kbID == "" {
 		if err := s.DB.SelectContext(ctx, &sessions, `
-			SELECT id, kb_id, title, created_at, updated_at FROM sessions
-			WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT $1 OFFSET $2
-		`, limit, offset); err != nil {
+			SELECT s.id, s.kb_id, s.title, s.created_at, s.updated_at
+			FROM sessions s
+			INNER JOIN knowledge_bases kb ON kb.id = s.kb_id
+			WHERE kb.user_id=$1 AND s.deleted_at IS NULL AND kb.deleted_at IS NULL
+			ORDER BY s.updated_at DESC LIMIT $2 OFFSET $3
+		`, userID, limit, offset); err != nil {
 			return nil, 0, err
 		}
 	} else {
 		if err := s.DB.SelectContext(ctx, &sessions, `
-			SELECT id, kb_id, title, created_at, updated_at FROM sessions
-			WHERE kb_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT $2 OFFSET $3
-		`, kbID, limit, offset); err != nil {
+			SELECT s.id, s.kb_id, s.title, s.created_at, s.updated_at
+			FROM sessions s
+			INNER JOIN knowledge_bases kb ON kb.id = s.kb_id
+			WHERE kb.user_id=$1 AND s.kb_id=$2 AND s.deleted_at IS NULL AND kb.deleted_at IS NULL
+			ORDER BY s.updated_at DESC LIMIT $3 OFFSET $4
+		`, userID, kbID, limit, offset); err != nil {
 			return nil, 0, err
 		}
 	}
 	var total int
 	if kbID == "" {
-		err := s.DB.GetContext(ctx, &total, `SELECT COUNT(1) FROM sessions WHERE deleted_at IS NULL`)
+		err := s.DB.GetContext(ctx, &total, `
+			SELECT COUNT(1) FROM sessions s
+			INNER JOIN knowledge_bases kb ON kb.id = s.kb_id
+			WHERE kb.user_id=$1 AND s.deleted_at IS NULL AND kb.deleted_at IS NULL
+		`, userID)
 		if err != nil {
 			return nil, 0, err
 		}
 	} else {
-		err := s.DB.GetContext(ctx, &total, `SELECT COUNT(1) FROM sessions WHERE kb_id=$1 AND deleted_at IS NULL`, kbID)
+		err := s.DB.GetContext(ctx, &total, `
+			SELECT COUNT(1) FROM sessions s
+			INNER JOIN knowledge_bases kb ON kb.id = s.kb_id
+			WHERE kb.user_id=$1 AND s.kb_id=$2 AND s.deleted_at IS NULL AND kb.deleted_at IS NULL
+		`, userID, kbID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -470,8 +489,12 @@ func (s *Store) ListSessions(ctx context.Context, kbID string, limit, offset int
 	return sessions, total, nil
 }
 
-func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
-	_, err := s.DB.ExecContext(ctx, `UPDATE sessions SET deleted_at=NOW(), updated_at=NOW() WHERE id=$1`, sessionID)
+func (s *Store) DeleteSession(ctx context.Context, userID, sessionID string) error {
+	_, err := s.DB.ExecContext(ctx, `
+		UPDATE sessions SET deleted_at=NOW(), updated_at=NOW()
+		WHERE id=$1
+		AND EXISTS (SELECT 1 FROM knowledge_bases kb WHERE kb.id = sessions.kb_id AND kb.user_id=$2)
+	`, sessionID, userID)
 	return err
 }
 

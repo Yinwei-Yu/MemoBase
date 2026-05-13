@@ -12,7 +12,7 @@ describe('App routes', () => {
         <App />
       </MemoryRouter>,
     );
-    expect(screen.getByText('登录 MemoBase')).toBeInTheDocument();
+    expect(screen.getByText('登录控制台')).toBeInTheDocument();
   });
 });
 

@@ -20,7 +20,7 @@ func NewServer(app *core.App) *gin.Engine {
 	r.Use(RequestID())
 	r.Use(observability.HTTPMetrics())
 	r.Use(Logger(app.Logger))
-	RegisterRoutes(r, app)
+	RegisterAll(r, app)
 	return r
 }
 

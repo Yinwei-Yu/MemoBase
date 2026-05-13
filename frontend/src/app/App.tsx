@@ -32,7 +32,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/kbs" replace />} />
           <Route path="/kbs" element={<KnowledgeBasePage />} />
           <Route path="/kbs/:kbId/documents" element={<DocumentsPage />} />
-          <Route path="/chat/:kbId" element={<ChatPage />} />
+          <Route path="/chat/:kbId/:sessionId?" element={<ChatPage />} />
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/ops" element={<OpsPage />} />
         </Route>

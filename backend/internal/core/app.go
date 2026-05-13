@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
 	"regexp"
-	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"memobase/backend/internal/config"
@@ -26,6 +25,11 @@ type App struct {
 	Store  *store.Store
 	Qdrant *infra.QdrantClient
 	Ollama *infra.OllamaClient
+	Agent  *infra.AgentClient
+
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*App, error) {
@@ -48,6 +52,12 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 			return nil, err
 		}
 	}
+	agentClient, err := infra.NewAgentClient(cfg.AgentServiceURL)
+	if err != nil {
+		logger.Warn("agent_service_unavailable", slog.String("error", err.Error()))
+		agentClient = nil // retrieval and chunking will fail without agent service
+	}
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	app := &App{
 		Config: cfg,
 		Logger: logger,
@@ -55,12 +65,45 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		Store:  st,
 		Qdrant: infra.NewQdrantClient(cfg.QdrantURL),
 		Ollama: infra.NewOllamaClient(cfg.OllamaURL, cfg.OllamaTimeout),
+		Agent:  agentClient,
+		ctx:    lifecycleCtx,
+		cancel: lifecycleCancel,
 	}
 	return app, nil
 }
 
 func (a *App) Close() error {
+	a.cancel()
+
+	done := make(chan struct{})
+	go func() {
+		a.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		a.Logger.Warn("timed out waiting for document processing to finish")
+	}
+
+	if a.Agent != nil {
+		_ = a.Agent.Close()
+	}
 	return a.DB.Close()
+}
+
+// chunkDocument delegates to Python text processor via gRPC.
+func (a *App) chunkDocument(ctx context.Context, content string, chunkSize, overlap int) []string {
+	if a.Agent == nil {
+		a.Logger.Error("agent_service_required_for_chunking")
+		return nil
+	}
+	chunks, err := a.Agent.ChunkDocument(ctx, content, chunkSize, overlap, true)
+	if err != nil {
+		a.Logger.Error("grpc_chunk_failed", slog.String("error", err.Error()))
+		return nil
+	}
+	return chunks
 }
 
 func (a *App) VerifyUser(ctx context.Context, username, password string) (store.User, error) {
@@ -92,166 +135,57 @@ func (a *App) QdrantCollectionForKB(kbID string) string {
 	return prefix + "__" + kbPart
 }
 
-func splitIntoChunks(text string, chunkSize, overlap int) []string {
-	if chunkSize <= 0 {
-		chunkSize = 500
-	}
-	if overlap < 0 {
-		overlap = 0
-	}
-	if overlap >= chunkSize {
-		overlap = chunkSize / 5
-	}
-	runes := []rune(text)
-	if len(runes) == 0 {
-		return []string{}
-	}
-	chunks := make([]string, 0)
-	step := chunkSize - overlap
-	for start := 0; start < len(runes); start += step {
-		end := start + chunkSize
-		if end > len(runes) {
-			end = len(runes)
-		}
-		chunk := strings.TrimSpace(string(runes[start:end]))
-		if chunk != "" {
-			chunks = append(chunks, chunk)
-		}
-		if end == len(runes) {
-			break
-		}
-	}
-	return chunks
-}
-
-var tokenRe = regexp.MustCompile(`[\p{L}\p{N}]+`)
-
-func tokenize(text string) []string {
-	lower := strings.ToLower(text)
-	parts := tokenRe.FindAllString(lower, -1)
-	if len(parts) == 0 {
-		return []string{}
-	}
-	return parts
-}
-
-func bm25LikeScore(query, doc string) float64 {
-	qTokens := tokenize(query)
-	if len(qTokens) == 0 {
-		return 0
-	}
-	docTokens := tokenize(doc)
-	if len(docTokens) == 0 {
-		return 0
-	}
-	freq := map[string]int{}
-	for _, t := range docTokens {
-		freq[t]++
-	}
-	score := 0.0
-	for _, qt := range qTokens {
-		if n, ok := freq[qt]; ok {
-			score += math.Log(1 + float64(n))
-		}
-	}
-	return score / math.Sqrt(float64(len(docTokens))+1)
-}
-
-func normalizeScores(scores map[string]float64) map[string]float64 {
-	if len(scores) == 0 {
-		return map[string]float64{}
-	}
-	minV, maxV := math.MaxFloat64, -math.MaxFloat64
-	for _, v := range scores {
-		if v < minV {
-			minV = v
-		}
-		if v > maxV {
-			maxV = v
-		}
-	}
-	out := make(map[string]float64, len(scores))
-	if math.Abs(maxV-minV) < 1e-9 {
-		for k := range scores {
-			out[k] = 1
-		}
-		return out
-	}
-	for k, v := range scores {
-		out[k] = (v - minV) / (maxV - minV)
-	}
-	return out
-}
-
+// RetrievedChunk holds a single retrieval result from Python agent service.
 type RetrievedChunk struct {
-	Chunk store.Chunk
-	Score float64
-	Src   string
+	ChunkID string
+	DocID   string
+	Content string
+	Score   float64
+	Src     string // "bm25", "vector", "fused"
 }
 
+// RetrieveChunks delegates hybrid retrieval to the Python text processor service.
 func (a *App) RetrieveChunks(ctx context.Context, kbID, query string, topK int) ([]RetrievedChunk, bool, error) {
+	if a.Agent == nil {
+		return nil, false, fmt.Errorf("agent service not available")
+	}
 	if topK <= 0 {
 		topK = 6
 	}
-	limit := a.Config.RetrieveLimit
-	if limit <= 0 {
-		limit = 500
-	}
-	chunks, err := a.Store.GetChunksByKB(ctx, kbID, limit)
+	chunks, degraded, err := a.Agent.RetrieveChunks(ctx, kbID, query, topK)
 	if err != nil {
 		return nil, false, err
 	}
-	bm25Raw := map[string]float64{}
+	result := make([]RetrievedChunk, 0, len(chunks))
 	for _, c := range chunks {
-		bm25Raw[c.ID] = bm25LikeScore(query, c.Content)
-	}
-	bm25Norm := normalizeScores(bm25Raw)
-	vectorNorm := map[string]float64{}
-	degraded := false
-	if emb, err := a.Ollama.Embed(ctx, a.Config.OllamaEmbedModel, query); err == nil {
-		collection := a.QdrantCollectionForKB(kbID)
-		if vectorRaw, err := a.Qdrant.Search(ctx, collection, emb, topK*3); err == nil {
-			vectorNorm = normalizeScores(vectorRaw)
-		} else {
-			degraded = true
-		}
-	} else {
-		degraded = true
-	}
-	type scored struct {
-		chunk store.Chunk
-		score float64
-		src   string
-	}
-	all := make([]scored, 0, len(chunks))
-	for _, c := range chunks {
-		bs := bm25Norm[c.ID]
-		vs := vectorNorm[c.ID]
-		fs := a.Config.BM25Weight*bs + a.Config.VectorWeight*vs
-		src := "fused"
-		if vs == 0 && bs > 0 {
-			src = "bm25"
-		}
-		if bs == 0 && vs > 0 {
-			src = "vector"
-		}
-		if fs > 0 {
-			all = append(all, scored{chunk: c, score: fs, src: src})
-		}
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i].score > all[j].score })
-	if len(all) > topK {
-		all = all[:topK]
-	}
-	result := make([]RetrievedChunk, 0, len(all))
-	for _, x := range all {
-		result = append(result, RetrievedChunk{Chunk: x.chunk, Score: x.score, Src: x.src})
+		result = append(result, RetrievedChunk{
+			ChunkID: c.ChunkId,
+			DocID:   c.DocId,
+			Content: c.Content,
+			Score:   c.Score,
+			Src:     c.Source,
+		})
 	}
 	return result, degraded, nil
 }
 
+// InvalidateBM25Index clears the BM25 cache for a KB via the Python text processor service.
+func (a *App) InvalidateBM25Index(kbID string) {
+	if a.Agent == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := a.Agent.InvalidateCache(ctx, kbID); err != nil {
+		a.Logger.Warn("grpc_invalidate_cache_failed", slog.String("kb_id", kbID), slog.String("error", err.Error()))
+	}
+}
+
 func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, overlap int) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	a.wg.Add(1)
+	defer a.wg.Done()
+
+	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Minute)
 	defer cancel()
 	_ = a.Store.UpdateTask(ctx, taskID, "processing", 10, nil, nil)
 	_ = a.Store.UpdateDocumentStatus(ctx, docID, "processing")
@@ -266,7 +200,7 @@ func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, o
 		return
 	}
 	_ = a.Store.UpdateDocumentContent(ctx, docID, content)
-	chunks := splitIntoChunks(content, chunkSize, overlap)
+	chunks := a.chunkDocument(ctx, content, chunkSize, overlap)
 	dbChunks := make([]store.Chunk, 0, len(chunks))
 	for i, chunk := range chunks {
 		dbChunks = append(dbChunks, store.Chunk{
@@ -329,6 +263,7 @@ func (a *App) ProcessDocument(taskID, kbID, docID, filePath string, chunkSize, o
 	}
 	_ = a.Store.UpdateDocumentStatus(ctx, docID, "indexed")
 	_ = a.Store.UpdateTask(ctx, taskID, "succeeded", 100, nil, nil)
+	a.InvalidateBM25Index(kbID)
 }
 
 func qdrantPointID(chunkID string) string {
@@ -361,7 +296,7 @@ func (a *App) BuildChatPrompt(question string, chunks []RetrievedChunk, memories
 	b.WriteString("你是知识库助手。请基于给定上下文回答问题，并保持简洁。\n\n")
 	b.WriteString("[上下文片段]\n")
 	for i, c := range chunks {
-		b.WriteString(fmt.Sprintf("[%d] (%s) %s\n", i+1, c.Chunk.ID, c.Chunk.Content))
+		b.WriteString(fmt.Sprintf("[%d] (%s) %s\n", i+1, c.ChunkID, c.Content))
 	}
 	if len(memories) > 0 {
 		b.WriteString("\n[记忆]\n")

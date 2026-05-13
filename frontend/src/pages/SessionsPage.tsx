@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiDelete, apiGet } from '../lib/api/client';
 import type { MessageItem, Pagination, SessionItem } from '../lib/types/api';
@@ -8,6 +9,7 @@ type MessageResp = { items: MessageItem[]; pagination: Pagination };
 
 export default function SessionsPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [selected, setSelected] = useState('');
 
   const sessionsQuery = useQuery({
@@ -52,6 +54,7 @@ export default function SessionsPage() {
                 <small>kb: {session.kb_id}</small>
               </div>
               <div className="row-gap">
+                <button onClick={() => navigate(`/chat/${session.kb_id}/${session.session_id}`)}>继续对话</button>
                 <button onClick={() => setSelected(session.session_id)}>查看消息</button>
                 <button onClick={() => deleteMutation.mutate(session.session_id)}>删除</button>
               </div>

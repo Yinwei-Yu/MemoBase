@@ -47,6 +47,7 @@ type Document struct {
 	Title     string    `db:"title" json:"title"`
 	FileName  string    `db:"file_name" json:"file_name"`
 	Status    string    `db:"status" json:"status"`
+	Content   string    `db:"content_text" json:"content_text,omitempty"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }

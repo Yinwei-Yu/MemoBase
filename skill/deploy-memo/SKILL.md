@@ -28,6 +28,30 @@ docker --version        # >= 24.0
 docker compose version  # >= 2.20
 ```
 
+**本地开发额外前置**（不使用 Docker 时）：
+
+```bash
+# protoc（macOS）
+brew install protobuf
+
+# Go protobuf 插件
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+# 生成 proto 代码
+protoc \
+  --plugin=protoc-gen-go=$(go env GOPATH)/bin/protoc-gen-go \
+  --plugin=protoc-gen-go-grpc=$(go env GOPATH)/bin/protoc-gen-go-grpc \
+  -I=. \
+  --go_out=backend \
+  --go_opt=module=memobase/backend \
+  --go-grpc_out=backend \
+  --go-grpc_opt=module=memobase/backend \
+  agent-service/proto/agent.proto
+```
+
+生成文件：`backend/proto/agent.pb.go`、`backend/proto/agent_grpc.pb.go`
+
 ### 步骤 2：清理旧容器
 
 ```bash

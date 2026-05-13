@@ -118,7 +118,31 @@ curl http://localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'
 - Qdrant（`http://localhost:6333`）
 - Ollama（`http://localhost:11434`，并已拉取模型）
 
-## 5.2 启动后端
+## 5.2 生成 protobuf 代码（前置步骤）
+
+项目通过 gRPC 与 Python agent 服务通信，需先生成 proto 代码：
+
+```bash
+# 安装 protoc 与 Go 插件（首次）
+brew install protobuf
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+# 生成代码
+protoc \
+  --plugin=protoc-gen-go=$(go env GOPATH)/bin/protoc-gen-go \
+  --plugin=protoc-gen-go-grpc=$(go env GOPATH)/bin/protoc-gen-go-grpc \
+  -I=. \
+  --go_out=backend \
+  --go_opt=module=memobase/backend \
+  --go-grpc_out=backend \
+  --go-grpc_opt=module=memobase/backend \
+  agent-service/proto/agent.proto
+```
+
+生成文件：`backend/proto/agent.pb.go`、`backend/proto/agent_grpc.pb.go`
+
+## 5.3 启动后端
 
 ```bash
 cd backend
@@ -127,7 +151,7 @@ cp .env.example .env  # 可选，或直接设置环境变量
 go run ./cmd/server
 ```
 
-## 5.3 启动前端
+## 5.4 启动前端
 
 ```bash
 cd frontend

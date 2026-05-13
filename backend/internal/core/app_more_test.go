@@ -30,21 +30,6 @@ func TestSanitizeQdrantCollectionPart(t *testing.T) {
 	}
 }
 
-func TestTokenize(t *testing.T) {
-	t.Parallel()
-
-	got := tokenize("Thread-1 与 进程 process_2!")
-	want := []string{"thread", "1", "与", "进程", "process", "2"}
-	if len(got) != len(want) {
-		t.Fatalf("len(tokenize()) = %d; want %d; got=%v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("tokenize()[%d] = %q; want %q", i, got[i], want[i])
-		}
-	}
-}
-
 func TestSummarize(t *testing.T) {
 	t.Parallel()
 
@@ -77,8 +62,8 @@ func TestBuildChatPrompt(t *testing.T) {
 	prompt := app.BuildChatPrompt(
 		"问题是什么？",
 		[]RetrievedChunk{
-			{Chunk: store.Chunk{ID: "ck1", Content: "chunk one"}},
-			{Chunk: store.Chunk{ID: "ck2", Content: "chunk two"}},
+			{ChunkID: "ck1", Content: "chunk one"},
+			{ChunkID: "ck2", Content: "chunk two"},
 		},
 		[]store.Memory{
 			{Summary: "memory summary"},

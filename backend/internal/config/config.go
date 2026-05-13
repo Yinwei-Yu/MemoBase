@@ -23,10 +23,8 @@ type Config struct {
 	OllamaChatModel  string
 	OllamaEmbedModel string
 	OllamaTimeout    time.Duration
-	BM25Weight       float64
-	VectorWeight     float64
-	RetrieveLimit    int
 	EnableDemoUser   bool
+	AgentServiceURL  string
 }
 
 func Load() Config {
@@ -48,10 +46,8 @@ func Load() Config {
 		OllamaChatModel:  get("OLLAMA_CHAT_MODEL", "qwen2.5:3b"),
 		OllamaEmbedModel: get("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
 		OllamaTimeout:    time.Duration(getInt("OLLAMA_TIMEOUT_SEC", 90)) * time.Second,
-		BM25Weight:       getFloat("BM25_WEIGHT", 0.5),
-		VectorWeight:     getFloat("VECTOR_WEIGHT", 0.5),
-		RetrieveLimit:    getInt("RETRIEVAL_DB_CANDIDATE_LIMIT", 5000),
 		EnableDemoUser:   getBool("ENABLE_DEMO_USER", enableDemoUserDefault),
+		AgentServiceURL:  get("AGENT_SERVICE_URL", "localhost:50051"),
 	}
 }
 
@@ -61,12 +57,6 @@ func (c Config) Validate() error {
 	}
 	if c.TokenTTL <= 0 {
 		return fmt.Errorf("TOKEN_TTL_HOURS must be greater than 0")
-	}
-	if c.BM25Weight < 0 || c.VectorWeight < 0 {
-		return fmt.Errorf("BM25_WEIGHT and VECTOR_WEIGHT must be non-negative")
-	}
-	if c.BM25Weight == 0 && c.VectorWeight == 0 {
-		return fmt.Errorf("BM25_WEIGHT and VECTOR_WEIGHT cannot both be 0")
 	}
 	if c.AppEnv != "dev" {
 		if strings.TrimSpace(c.JWTSecret) == "" {

@@ -27,7 +27,7 @@ func newRouteTestEngine() (*gin.Engine, *core.App) {
 		Logger: slog.Default(),
 	}
 	r := gin.New()
-	RegisterRoutes(r, app)
+	RegisterAll(r, app)
 	return r, app
 }
 

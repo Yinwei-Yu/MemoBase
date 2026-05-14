@@ -157,6 +157,7 @@ export type ChatStreamTokenEvent = {
 
 export type ChatStreamResultEvent = {
   type: "result";
+  session_id?: string;
   answer: string;
   degraded?: boolean;
   latency_ms?: number;
@@ -192,6 +193,7 @@ export type ModelProvider = {
   api_base_url: string;
   api_key_masked?: string;
   default_model: string;
+  embedding_model?: string;
   is_default: boolean;
   created_at: string;
   updated_at: string;

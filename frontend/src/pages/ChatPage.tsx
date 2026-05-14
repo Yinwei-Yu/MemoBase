@@ -142,6 +142,9 @@ export default function ChatPage() {
               break;
             case "result":
               setStreamingAnswer(event.answer);
+              if (event.session_id) {
+                setSessionId(event.session_id);
+              }
               if (event.citations) {
                 setCitationHistory((prev) => [...prev, event.citations ?? []]);
               }
@@ -263,6 +266,17 @@ export default function ChatPage() {
       return;
     }
     startStreaming(currentQuestion);
+  }
+
+  function onTextareaKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      const currentQuestion = question.trim();
+      if (!currentQuestion || chatMutation.isPending || isStreaming) {
+        return;
+      }
+      startStreaming(currentQuestion);
+    }
   }
 
   function onCancelStream() {
@@ -464,7 +478,8 @@ export default function ChatPage() {
             <textarea
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              placeholder="输入你的问题..."
+              onKeyDown={onTextareaKeyDown}
+              placeholder="输入你的问题... (Enter 发送，Shift+Enter 换行)"
               rows={3}
             />
             <button disabled={isThinking || !question.trim()} type="submit">

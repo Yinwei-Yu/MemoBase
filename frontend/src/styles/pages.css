@@ -853,6 +853,21 @@
   font-weight: 600;
 }
 
+/* ---- Prometheus Charts ---- */
+.prometheus-chart-card {
+  min-height: 360px;
+}
+
+.chart-container {
+  margin-top: var(--space-3);
+}
+
+.chart-container .recharts-cartesian-grid-horizontal line,
+.chart-container .recharts-cartesian-grid-vertical line {
+  stroke: var(--border-primary);
+  stroke-opacity: 0.5;
+}
+
 /* ---- Chat Provider Selector ---- */
 .qa-provider-select {
   width: 100%;

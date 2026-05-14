@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { client } from '../lib/api/client';
 
 type ReadyResponse = {
@@ -24,10 +25,131 @@ type MetricsSnapshot = {
   };
 };
 
+type PrometheusSeries = {
+  label: string;
+  values: [number, string][];
+};
+
+type PrometheusQueryResponse = {
+  data: {
+    series: PrometheusSeries[];
+  };
+};
+
+// Colors for chart lines
+const COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4'];
+
 function fmtMs(seconds: number): string {
   if (seconds < 0.001) return '<1ms';
   if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
   return `${seconds.toFixed(2)}s`;
+}
+
+function fmtTime(ts: number): string {
+  return new Date(ts * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Build time range params for Prometheus query_range
+function timeRange() {
+  const end = Math.floor(Date.now() / 1000);
+  const start = end - 3600; // last 1 hour
+  return { start: String(start), end: String(end), step: '60' };
+}
+
+function usePrometheusQuery(query: string) {
+  return useQuery({
+    queryKey: ['prometheus', query],
+    queryFn: async () => {
+      const params = { query, ...timeRange() };
+      const resp = await client.get<PrometheusQueryResponse>('/metrics/prometheus', { params });
+      return resp.data.data.series;
+    },
+    refetchInterval: 15000,
+  });
+}
+
+// Transform Prometheus series into recharts-compatible data
+function toChartData(series: PrometheusSeries[]) {
+  if (!series.length) return [];
+
+  // Collect all timestamps from first series
+  const timestamps = series[0].values.map(([ts]) => ts);
+
+  return timestamps.map((ts, i) => {
+    const point: Record<string, number | string> = { time: fmtTime(ts) };
+    series.forEach((s) => {
+      const val = s.values[i]?.[1];
+      point[s.label] = val != null ? parseFloat(val) : 0;
+    });
+    return point;
+  });
+}
+
+function PrometheusChart({ title, query, unit, colorIndex = 0 }: {
+  title: string;
+  query: string;
+  unit?: string;
+  colorIndex?: number;
+}) {
+  const { data: series, isLoading, isError, error } = usePrometheusQuery(query);
+
+  const chartData = series ? toChartData(series) : [];
+  const labels = series?.map((s) => s.label) ?? [];
+
+  return (
+    <div className="card prometheus-chart-card">
+      <h2>{title}</h2>
+      {isLoading && <p className="system-tip">加载中...</p>}
+      {isError && <div className="error-box">{(error as Error).message}</div>}
+      {!isLoading && !isError && chartData.length === 0 && (
+        <p className="system-tip">暂无数据</p>
+      )}
+      {chartData.length > 0 && (
+        <div className="chart-container">
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-primary)" />
+              <XAxis
+                dataKey="time"
+                tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }}
+                tickLine={false}
+                axisLine={{ stroke: 'var(--border-primary)' }}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }}
+                tickLine={false}
+                axisLine={{ stroke: 'var(--border-primary)' }}
+                width={60}
+                tickFormatter={unit === 'reqps' ? (v) => `${v}/s` : undefined}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-primary)',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 'var(--text-xs)',
+                }}
+              />
+              <Legend
+                wrapperStyle={{ fontSize: 'var(--text-xs)', paddingTop: 8 }}
+              />
+              {labels.map((label, i) => (
+                <Line
+                  key={label}
+                  type="monotone"
+                  dataKey={label}
+                  stroke={COLORS[(colorIndex + i) % COLORS.length]}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function OpsPage() {
@@ -196,6 +318,21 @@ export default function OpsPage() {
           </>
         )}
       </div>
+
+      {/* ---- Prometheus Time-Series Charts ---- */}
+      <PrometheusChart
+        title="请求速率 (req/s)"
+        query="sum(rate(memobase_http_requests_total[1m])) by (status)"
+        unit="reqps"
+        colorIndex={0}
+      />
+
+      <PrometheusChart
+        title="请求延迟 (avg)"
+        query="rate(memobase_http_request_duration_seconds_sum[1m]) / rate(memobase_http_request_duration_seconds_count[1m])"
+        unit="seconds"
+        colorIndex={2}
+      />
     </section>
   );
 }

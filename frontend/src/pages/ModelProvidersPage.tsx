@@ -8,6 +8,7 @@ type FormState = {
   api_base_url: string;
   api_key: string;
   default_model: string;
+  embedding_model: string;
 };
 
 const emptyForm: FormState = {
@@ -15,6 +16,7 @@ const emptyForm: FormState = {
   api_base_url: '',
   api_key: '',
   default_model: '',
+  embedding_model: '',
 };
 
 export default function ModelProvidersPage() {
@@ -86,6 +88,7 @@ export default function ModelProvidersPage() {
       api_base_url: provider.api_base_url,
       api_key: '',
       default_model: provider.default_model,
+      embedding_model: provider.embedding_model || '',
     });
     setShowForm(true);
   }
@@ -163,6 +166,18 @@ export default function ModelProvidersPage() {
                 required
               />
             </label>
+            <label>
+              <span>Embedding 模型 <span className="muted">(可选)</span></span>
+              <input
+                type="text"
+                value={form.embedding_model}
+                onChange={(e) => setForm((f) => ({ ...f, embedding_model: e.target.value }))}
+                placeholder="text-embedding-3-small"
+              />
+              <p className="muted" style={{ fontSize: 'var(--text-xs)', margin: '0.25rem 0 0' }}>
+                不同 embedding 模型输出维度不同，切换模型需重建知识库索引。
+              </p>
+            </label>
             <div className="form-actions">
               <button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
                 {createMutation.isPending || updateMutation.isPending ? '保存中...' : '保存'}
@@ -204,7 +219,9 @@ export default function ModelProvidersPage() {
                 {p.api_base_url}
               </p>
               <p className="muted" style={{ fontSize: 'var(--text-xs)', margin: 0 }}>
-                模型: {p.default_model} &middot; Key: {p.api_key_masked || '****'}
+                模型: {p.default_model}
+                {p.embedding_model && <> &middot; Embedding: {p.embedding_model}</>}
+                {' '}&middot; Key: {p.api_key_masked || '****'}
               </p>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>

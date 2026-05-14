@@ -8,15 +8,7 @@ scrape_configs:
       - targets: ['localhost:9090']
 
   - job_name: 'memobase-backend'
-    metrics_path: '/metrics'
+    metrics_path: '/api/v1/metrics'
     static_configs:
       - targets: ['backend:8080']
 
-  - job_name: 'cadvisor'
-    static_configs:
-      - targets: ['cadvisor:8080']
-    metrics_path: '/metrics'
-
-  - job_name: 'node-exporter'
-    static_configs:
-      - targets: ['node-exporter:9100']

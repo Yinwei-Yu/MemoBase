@@ -45,28 +45,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: memobase-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    command: ["serve"]
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/11434'"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-    networks:
-      - backend
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   agent-service:
     build:
       context: ./agent-service
@@ -77,13 +55,15 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
     environment:
       GRPC_PORT: "50051"
-      OLLAMA_URL: http://ollama:11434
-      OLLAMA_CHAT_MODEL: qwen2.5:3b
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_CHAT_MODEL: ""
       OLLAMA_EMBED_MODEL: nomic-embed-text
+      EMBED_PROVIDER: ollama
+      EMBED_API_BASE_URL: ""
+      EMBED_API_KEY: ""
+      EMBED_MODEL: ""
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION_PREFIX: kb_chunks
       DATABASE_URL: postgres://memo:memo@postgres:5432/memo
@@ -210,56 +190,10 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
-    container_name: memobase-cadvisor
-    restart: unless-stopped
-    ports:
-      - "8081:8080"
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-      - /dev/disk/:/dev/disk:ro
-    privileged: true
-    devices:
-      - /dev/kmsg
-    networks:
-      - monitoring
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: memobase-node-exporter
-    restart: unless-stopped
-    ports:
-      - "9100:9100"
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.rootfs=/rootfs'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-    networks:
-      - monitoring
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
 
 volumes:
   postgres_data:
   qdrant_data:
-  ollama_data:
   backend_storage:
   prometheus_data:
   grafana_data:

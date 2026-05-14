@@ -7,9 +7,6 @@ services:
   qdrant:
     ports: []
 
-  ollama:
-    ports: []
-
   agent-service:
     ports: []
     deploy:
@@ -48,8 +45,3 @@ services:
   grafana:
     ports: []
 
-  cadvisor:
-    ports: []
-
-  node-exporter:
-    ports: []

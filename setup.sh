@@ -28,6 +28,38 @@ check_cmd() {
 
 check_cmd docker "Install Docker Desktop: https://docker.com/products/docker-desktop"
 
+# ─── 1b. Check & start Ollama ────────────────────────────────────────────────
+info "Checking Ollama..."
+
+if ! command -v ollama &>/dev/null; then
+    err "ollama not found. Install: https://ollama.com/download"
+    exit 1
+fi
+ok "ollama found"
+
+if curl -sf http://localhost:11434/api/tags &>/dev/null; then
+    ok "Ollama server already running"
+else
+    warn "Ollama server not running, attempting to start..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        open -a Ollama 2>/dev/null || ollama serve &
+    else
+        ollama serve &
+    fi
+    # Wait for server
+    for i in $(seq 1 30); do
+        if curl -sf http://localhost:11434/api/tags &>/dev/null; then
+            ok "Ollama server started"
+            break
+        fi
+        sleep 1
+    done
+    if ! curl -sf http://localhost:11434/api/tags &>/dev/null; then
+        err "Ollama server failed to start"
+        exit 1
+    fi
+fi
+
 # Check docker compose (v2 plugin or standalone)
 if docker compose version &>/dev/null 2>&1; then
     ok "docker compose (v2 plugin)"
@@ -96,6 +128,9 @@ ok "Clean slate"
 info "Building and starting all services..."
 docker compose up --build -d
 
+# List available Ollama models
+ollama_models=$(curl -sf http://localhost:11434/api/tags 2>/dev/null | python3 -c "import sys,json; models=json.load(sys.stdin).get('models',[]); print(', '.join(m['name'] for m in models) if models else '(none)')" 2>/dev/null || echo "(unknown)")
+
 info "Waiting for services to become healthy..."
 timeout=120
 elapsed=0
@@ -121,10 +156,13 @@ echo -e "  ${CYAN}API Health${NC}      http://localhost:8080/api/v1/readyz"
 echo -e "  ${CYAN}Grafana${NC}         http://localhost:3000  (admin / admin)"
 echo -e "  ${CYAN}Prometheus${NC}      http://localhost:9090"
 echo -e "  ${CYAN}Qdrant${NC}          http://localhost:6333"
-echo -e "  ${CYAN}Ollama${NC}          http://localhost:11434"
+echo -e "  ${CYAN}Ollama${NC}          http://localhost:11434 (local, not in Docker)"
 echo -e "  ${CYAN}Agent gRPC${NC}      localhost:50051"
 echo ""
 echo -e "  ${YELLOW}Demo login:${NC}  demo / demo123"
+echo ""
+echo -e "  ${CYAN}Ollama models:${NC}  $ollama_models"
+echo -e "  ${YELLOW}Tip:${NC} Pull models as needed: ${CYAN}ollama pull <model>${NC}"
 echo ""
 echo "════════════════════════════════════════════════════════════════"
 echo ""

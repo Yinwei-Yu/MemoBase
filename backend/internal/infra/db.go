@@ -29,8 +29,7 @@ func InitSchema(ctx context.Context, db *sqlx.DB) error {
 	if initSchema == "" {
 		return fmt.Errorf("init schema is empty")
 	}
-	_, err := db.ExecContext(ctx, initSchema)
-	if err != nil {
+	if _, err := db.ExecContext(ctx, initSchema); err != nil {
 		return err
 	}
 	return nil

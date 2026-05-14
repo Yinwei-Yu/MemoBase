@@ -20,9 +20,8 @@ func newRouteTestEngine() (*gin.Engine, *core.App) {
 	gin.SetMode(gin.TestMode)
 	app := &core.App{
 		Config: config.Config{
-			JWTSecret:       "test-secret",
-			TokenTTL:        2 * time.Hour,
-			OllamaChatModel: "qwen2.5:3b",
+			JWTSecret: "test-secret",
+			TokenTTL:  2 * time.Hour,
 		},
 		Logger: slog.Default(),
 	}

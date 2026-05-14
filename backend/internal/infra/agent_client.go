@@ -119,3 +119,25 @@ func (ac *AgentClient) InvalidateCache(ctx context.Context, kbID string) error {
 	_, err := ac.textProcessor.InvalidateCache(ctx, &pb.InvalidateCacheRequest{KbId: kbID})
 	return err
 }
+
+// IndexDocument delegates chunking + embedding + Qdrant upsert to the Python text processor service.
+func (ac *AgentClient) IndexDocument(ctx context.Context, req *pb.IndexDocumentRequest) (*pb.IndexDocumentResponse, error) {
+	return ac.textProcessor.IndexDocument(ctx, req)
+}
+
+// DeleteDocumentVectors removes all Qdrant vectors for a document via the Python text processor service.
+func (ac *AgentClient) DeleteDocumentVectors(ctx context.Context, collection, docID string) error {
+	_, err := ac.textProcessor.DeleteDocumentVectors(ctx, &pb.DeleteDocVectorsRequest{
+		CollectionName: collection,
+		DocId:          docID,
+	})
+	return err
+}
+
+// DeleteKBCollection deletes an entire Qdrant collection for a KB via the Python text processor service.
+func (ac *AgentClient) DeleteKBCollection(ctx context.Context, collection string) error {
+	_, err := ac.textProcessor.DeleteKBCollection(ctx, &pb.DeleteKBCollectionRequest{
+		CollectionName: collection,
+	})
+	return err
+}

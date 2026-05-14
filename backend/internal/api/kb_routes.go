@@ -120,7 +120,9 @@ func handleDeleteKB(app *core.App) gin.HandlerFunc {
 			util.Internal(c, "failed to delete knowledge base")
 			return
 		}
-		_ = app.Qdrant.DeleteCollection(c.Request.Context(), app.QdrantCollectionForKB(kbID))
+		if app.Agent != nil {
+			_ = app.Agent.DeleteKBCollection(c.Request.Context(), app.QdrantCollectionForKB(kbID))
+		}
 		app.InvalidateBM25Index(kbID)
 		util.Success(c, http.StatusOK, gin.H{"deleted": true})
 	}

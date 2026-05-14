@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,6 +42,7 @@ func handleChatCompletions(app *core.App) gin.HandlerFunc {
 			SessionID    string `json:"session_id"`
 			Question     string `json:"question"`
 			Model        string `json:"model"`
+			ProviderID   string `json:"provider_id"`
 			UseAgent     *bool  `json:"use_agent"`
 			TopK         int    `json:"top_k"`
 			IncludeTrace bool   `json:"include_trace"`
@@ -59,10 +61,31 @@ func handleChatCompletions(app *core.App) gin.HandlerFunc {
 			return
 		}
 		model := req.Model
-		if model == "" {
-			model = app.Config.OllamaChatModel
-		}
 		topK := clampTopK(req.TopK)
+
+		// Resolve provider config if provider_id is set
+		var providerBaseURL, providerAPIKey, providerModel string
+		if req.ProviderID != "" {
+			userID := userIDFrom(c)
+			mp, err := app.Store.GetModelProvider(c.Request.Context(), userID, req.ProviderID)
+			if err != nil {
+				if store.IsNotFound(err) {
+					util.Fail(c, http.StatusNotFound, "PROVIDER_NOT_FOUND", "model provider not found", nil)
+				} else {
+					util.Internal(c, "failed to get provider")
+				}
+				return
+			}
+			providerBaseURL = mp.APIBaseURL
+			providerAPIKey = mp.APIKey
+			providerModel = mp.DefaultModel
+			app.Logger.Info("using_external_provider",
+				"provider_id", req.ProviderID,
+				"provider_name", mp.Name,
+				"model", providerModel,
+				"api_base_url", providerBaseURL,
+			)
+		}
 
 		sessionID, sessionErr := ensureSession(c, app, req.KBID, req.SessionID, question)
 		if sessionErr != nil {
@@ -80,13 +103,12 @@ func handleChatCompletions(app *core.App) gin.HandlerFunc {
 			useAgent = *req.UseAgent && app.Agent != nil
 		}
 
-		if useAgent {
-			handleChatViaAgent(c, app, startedAt, sessionID, req.KBID, question, model, topK)
+		if !useAgent || app.Agent == nil {
+			util.Fail(c, http.StatusServiceUnavailable, "AGENT_UNAVAILABLE", "agent service is required for chat", nil)
 			return
 		}
 
-		// Fallback: local RAG path
-		handleChatLocal(c, app, startedAt, sessionID, req.KBID, question, model, topK)
+		handleChatViaAgent(c, app, startedAt, sessionID, req.KBID, question, model, topK, req.ProviderID, providerBaseURL, providerAPIKey, providerModel)
 	}
 }
 
@@ -95,11 +117,12 @@ func handleChatCompletions(app *core.App) gin.HandlerFunc {
 func handleChatStream(app *core.App) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
-			KBID      string `json:"kb_id"`
-			SessionID string `json:"session_id"`
-			Question  string `json:"question"`
-			Model     string `json:"model"`
-			TopK      int    `json:"top_k"`
+			KBID       string `json:"kb_id"`
+			SessionID  string `json:"session_id"`
+			Question   string `json:"question"`
+			Model      string `json:"model"`
+			ProviderID string `json:"provider_id"`
+			TopK       int    `json:"top_k"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "invalid payload", nil)
@@ -109,6 +132,30 @@ func handleChatStream(app *core.App) gin.HandlerFunc {
 		if strings.TrimSpace(req.KBID) == "" || question == "" {
 			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "kb_id and question are required", nil)
 			return
+		}
+
+		// Resolve provider config if provider_id is set
+		var providerBaseURL, providerAPIKey, providerModel string
+		if req.ProviderID != "" {
+			userID := userIDFrom(c)
+			mp, err := app.Store.GetModelProvider(c.Request.Context(), userID, req.ProviderID)
+			if err != nil {
+				if store.IsNotFound(err) {
+					util.Fail(c, http.StatusNotFound, "PROVIDER_NOT_FOUND", "model provider not found", nil)
+				} else {
+					util.Internal(c, "failed to get provider")
+				}
+				return
+			}
+			providerBaseURL = mp.APIBaseURL
+			providerAPIKey = mp.APIKey
+			providerModel = mp.DefaultModel
+			app.Logger.Info("using_external_provider",
+				"provider_id", req.ProviderID,
+				"provider_name", mp.Name,
+				"model", providerModel,
+				"api_base_url", providerBaseURL,
+			)
 		}
 
 		sessionID, sessionErr := ensureSession(c, app, req.KBID, req.SessionID, question)
@@ -121,42 +168,97 @@ func handleChatStream(app *core.App) gin.HandlerFunc {
 			return
 		}
 
-		// If agent is not available, fall back to unary mode via SSE
 		if app.Agent == nil {
-			handleChatStreamLocal(c, app, sessionID, req.KBID, question, req.Model, req.TopK)
+			util.Fail(c, http.StatusServiceUnavailable, "AGENT_UNAVAILABLE", "agent service is required for chat", nil)
 			return
 		}
 
-		handleChatStreamViaAgent(c, app, sessionID, req.KBID, question, req.Model, req.TopK)
+		handleChatStreamViaAgent(c, app, sessionID, req.KBID, question, req.Model, req.TopK, req.ProviderID, providerBaseURL, providerAPIKey, providerModel)
 	}
 }
 
 // ── Agent path ───────────────────────────────────────────────────────────────
 
-func handleChatViaAgent(c *gin.Context, app *core.App, startedAt time.Time, sessionID, kbID, question, model string, topK int) {
+func handleChatViaAgent(c *gin.Context, app *core.App, startedAt time.Time, sessionID, kbID, question, model string, topK int, providerID, providerBaseURL, providerAPIKey, providerModel string) {
 	ctx := c.Request.Context()
 
-	// Load chat history
-	messages, _, histErr := app.Store.ListMessages(ctx, sessionID, 20, 0)
+	// Load chat history — fetch more, let budget manage
+	messages, _, histErr := app.Store.ListMessages(ctx, sessionID, 200, 0)
 	if histErr != nil {
 		app.Logger.Warn("load_history_failed", "session_id", sessionID, "error", histErr.Error())
 	}
-	history := make([]*pb.Message, 0, len(messages))
-	for _, m := range messages {
+
+	// Load memories (session-level + user-level)
+	sessionMems, memErr := app.Store.ListSessionMemories(ctx, sessionID, 3)
+	if memErr != nil {
+		app.Logger.Warn("load_session_memories_failed", "session_id", sessionID, "error", memErr.Error())
+	}
+	var memories []store.Memory
+	memories = append(memories, sessionMems...)
+
+	// Load user-level memories (long_term, fact, preference)
+	if userID, err := app.Store.GetKBUserID(ctx, kbID); err == nil {
+		userMems, err := app.Store.ListUserMemories(ctx, userID, "", 5)
+		if err != nil {
+			app.Logger.Warn("load_user_memories_failed", "user_id", userID, "error", err.Error())
+		} else {
+			// Deduplicate by ID
+			seen := make(map[string]bool)
+			for _, m := range sessionMems {
+				seen[m.ID] = true
+			}
+			for _, m := range userMems {
+				if !seen[m.ID] {
+					memories = append(memories, m)
+				}
+			}
+		}
+	}
+
+	// Context budget management
+	budget := core.NewContextBudget(app.Config.ContextWindow, app.Config.OutputReserve)
+	budget.SystemTokens = 500
+	budget.RAGTokens = 1500
+	budget.MemoryTokens = core.EstimateMemoryTokens(memories)
+
+	var llmCompressFn func([]store.Message) (string, error)
+	if app.Provider != nil && providerBaseURL != "" && providerAPIKey != "" {
+		llmCompressFn = func(msgs []store.Message) (string, error) {
+			return llmCompressHistory(ctx, app, providerBaseURL, providerAPIKey, providerModel, msgs)
+		}
+	}
+
+	managed := budget.Manage(messages, memories, llmCompressFn)
+
+	if len(managed.ActionsTaken) > 0 {
+		app.Logger.Info("context_managed",
+			"session_id", sessionID,
+			"pressure", managed.Pressure.String(),
+			"actions", joinStrings(managed.ActionsTaken, ","),
+			"tokens", managed.TokenCount,
+		)
+	}
+
+	// Write back compressed memories from L3
+	for _, m := range managed.Memories {
+		if m.Type == "compressed" && m.ID == "" {
+			if _, err := app.Store.CreateMemory(ctx, sessionID, "compressed", m.Summary); err != nil {
+				app.Logger.Warn("save_compressed_memory_failed", "session_id", sessionID, "error", err.Error())
+			}
+		}
+	}
+
+	// Build gRPC messages from managed context
+	history := make([]*pb.Message, 0, len(managed.Messages))
+	for _, m := range managed.Messages {
 		history = append(history, &pb.Message{
 			Role:      m.Role,
 			Content:   m.Content,
 			CreatedAt: m.CreatedAt.Format(time.RFC3339),
 		})
 	}
-
-	// Load memories
-	memories, memErr := app.Store.ListSessionMemories(ctx, sessionID, 5)
-	if memErr != nil {
-		app.Logger.Warn("load_memories_failed", "session_id", sessionID, "error", memErr.Error())
-	}
-	memoryPbs := make([]*pb.Memory, 0, len(memories))
-	for _, m := range memories {
+	memoryPbs := make([]*pb.Memory, 0, len(managed.Memories))
+	for _, m := range managed.Memories {
 		memoryPbs = append(memoryPbs, &pb.Memory{
 			Type:    m.Type,
 			Summary: m.Summary,
@@ -164,20 +266,23 @@ func handleChatViaAgent(c *gin.Context, app *core.App, startedAt time.Time, sess
 	}
 
 	grpcReq := &pb.ChatRequest{
-		SessionId: sessionID,
-		KbId:      kbID,
-		Question:  question,
-		Model:     model,
-		TopK:      int32(topK),
-		History:   history,
-		Memories:  memoryPbs,
+		SessionId:          sessionID,
+		KbId:               kbID,
+		Question:           question,
+		Model:              model,
+		TopK:               int32(topK),
+		History:            history,
+		Memories:           memoryPbs,
+		ProviderId:         providerID,
+		ProviderApiBaseUrl: providerBaseURL,
+		ProviderApiKey:     providerAPIKey,
+		ProviderModel:      providerModel,
 	}
 
 	resp, err := app.Agent.ChatCompletion(ctx, grpcReq)
 	if err != nil {
 		app.Logger.Warn("agent_call_failed", "error", err.Error())
-		// Fallback to local
-		handleChatLocal(c, app, startedAt, sessionID, kbID, question, model, topK)
+		util.Fail(c, http.StatusServiceUnavailable, "AGENT_ERROR", "agent chat failed: "+err.Error(), nil)
 		return
 	}
 
@@ -236,94 +341,95 @@ func handleChatViaAgent(c *gin.Context, app *core.App, startedAt time.Time, sess
 			CompletionTokens: int(resp.TokenUsage.CompletionTokens),
 			TotalTokens:      int(resp.TokenUsage.TotalTokens),
 		},
-	})
-}
-
-// ── Local fallback path ─────────────────────────────────────────────────────
-
-func handleChatLocal(c *gin.Context, app *core.App, startedAt time.Time, sessionID, kbID, question, model string, topK int) {
-	ctx := c.Request.Context()
-
-	chunks, retrievalDegraded, err := app.RetrieveChunks(ctx, kbID, question, topK)
-	if err != nil {
-		app.Logger.Error("retrieval_failed",
-			"request_id", util.RequestID(c),
-			"kb_id", kbID,
-			"error", err.Error(),
-		)
-		util.Fail(c, http.StatusServiceUnavailable, "QDRANT_UNAVAILABLE", "retrieval failed", nil)
-		return
-	}
-	degraded := retrievalDegraded
-	memories, _ := app.Store.ListSessionMemories(ctx, sessionID, 5)
-	prompt := app.BuildChatPrompt(question, chunks, memories)
-	answer, promptT, completionT, err := app.Ollama.Chat(ctx, model, prompt)
-	if err != nil {
-		app.Logger.Error("model_chat_failed",
-			"request_id", util.RequestID(c),
-			"session_id", sessionID,
-			"error", err.Error(),
-		)
-		util.Fail(c, http.StatusServiceUnavailable, "MODEL_UNAVAILABLE", "ollama chat failed", nil)
-		return
-	}
-
-	if _, err := app.Store.CreateMessage(ctx, sessionID, "assistant", answer); err != nil {
-		util.Internal(c, "failed to write assistant message")
-		return
-	}
-	_, _ = app.Store.CreateMemory(ctx, sessionID, "short_term",
-		"Q: "+coreSummary(question, 80)+" | A: "+coreSummary(answer, 120))
-
-	citations := make([]core.Citation, 0, len(chunks))
-	for _, ch := range chunks {
-		doc, _ := app.Store.GetDocument(ctx, kbID, ch.DocID)
-		citations = append(citations, core.Citation{
-			DocID:           ch.DocID,
-			DocTitle:        doc.FileName,
-			ChunkID:         ch.ChunkID,
-			Snippet:         coreSummary(ch.Content, 160),
-			Score:           ch.Score,
-			RetrievalSource: ch.Src,
-		})
-	}
-
-	util.Success(c, http.StatusOK, gin.H{
-		"session_id":  sessionID,
-		"answer":      answer,
-		"citations":   citations,
-		"memory_used": memories,
-		"degraded":    degraded,
-		"latency_ms":  time.Since(startedAt).Milliseconds(),
-		"token_usage": core.TokenUsage{PromptTokens: promptT, CompletionTokens: completionT, TotalTokens: promptT + completionT},
+		"context_managed": gin.H{
+			"pressure": managed.Pressure.String(),
+			"actions":  managed.ActionsTaken,
+			"tokens":   managed.TokenCount,
+		},
+		"memory_count": len(managed.Memories),
 	})
 }
 
 // ── Streaming via agent ─────────────────────────────────────────────────────
 
-func handleChatStreamViaAgent(c *gin.Context, app *core.App, sessionID, kbID, question, model string, topK int) {
+func handleChatStreamViaAgent(c *gin.Context, app *core.App, sessionID, kbID, question, model string, topK int, providerID, providerBaseURL, providerAPIKey, providerModel string) {
 	ctx := c.Request.Context()
 
-	// Load history
-	messages, _, histErr := app.Store.ListMessages(ctx, sessionID, 20, 0)
+	// Load history — fetch more, let budget manage
+	messages, _, histErr := app.Store.ListMessages(ctx, sessionID, 200, 0)
 	if histErr != nil {
 		app.Logger.Warn("load_history_failed", "session_id", sessionID, "error", histErr.Error())
 	}
-	history := make([]*pb.Message, 0, len(messages))
-	for _, m := range messages {
+
+	// Load memories (session-level + user-level)
+	sessionMems, memErr := app.Store.ListSessionMemories(ctx, sessionID, 3)
+	if memErr != nil {
+		app.Logger.Warn("load_session_memories_failed", "session_id", sessionID, "error", memErr.Error())
+	}
+	var memories []store.Memory
+	memories = append(memories, sessionMems...)
+
+	if userID, err := app.Store.GetKBUserID(ctx, kbID); err == nil {
+		userMems, err := app.Store.ListUserMemories(ctx, userID, "", 5)
+		if err != nil {
+			app.Logger.Warn("load_user_memories_failed", "user_id", userID, "error", err.Error())
+		} else {
+			seen := make(map[string]bool)
+			for _, m := range sessionMems {
+				seen[m.ID] = true
+			}
+			for _, m := range userMems {
+				if !seen[m.ID] {
+					memories = append(memories, m)
+				}
+			}
+		}
+	}
+
+	// Context budget management
+	budget := core.NewContextBudget(app.Config.ContextWindow, app.Config.OutputReserve)
+	budget.SystemTokens = 500
+	budget.RAGTokens = 1500
+	budget.MemoryTokens = core.EstimateMemoryTokens(memories)
+
+	var llmCompressFn func([]store.Message) (string, error)
+	if app.Provider != nil && providerBaseURL != "" && providerAPIKey != "" {
+		llmCompressFn = func(msgs []store.Message) (string, error) {
+			return llmCompressHistory(ctx, app, providerBaseURL, providerAPIKey, providerModel, msgs)
+		}
+	}
+
+	managed := budget.Manage(messages, memories, llmCompressFn)
+
+	if len(managed.ActionsTaken) > 0 {
+		app.Logger.Info("context_managed",
+			"session_id", sessionID,
+			"pressure", managed.Pressure.String(),
+			"actions", joinStrings(managed.ActionsTaken, ","),
+			"tokens", managed.TokenCount,
+		)
+	}
+
+	// Write back compressed memories from L3
+	for _, m := range managed.Memories {
+		if m.Type == "compressed" && m.ID == "" {
+			if _, err := app.Store.CreateMemory(ctx, sessionID, "compressed", m.Summary); err != nil {
+				app.Logger.Warn("save_compressed_memory_failed", "session_id", sessionID, "error", err.Error())
+			}
+		}
+	}
+
+	// Build gRPC messages from managed context
+	history := make([]*pb.Message, 0, len(managed.Messages))
+	for _, m := range managed.Messages {
 		history = append(history, &pb.Message{
 			Role:      m.Role,
 			Content:   m.Content,
 			CreatedAt: m.CreatedAt.Format(time.RFC3339),
 		})
 	}
-
-	memories, memErr := app.Store.ListSessionMemories(ctx, sessionID, 5)
-	if memErr != nil {
-		app.Logger.Warn("load_memories_failed", "session_id", sessionID, "error", memErr.Error())
-	}
-	memoryPbs := make([]*pb.Memory, 0, len(memories))
-	for _, m := range memories {
+	memoryPbs := make([]*pb.Memory, 0, len(managed.Memories))
+	for _, m := range managed.Memories {
 		memoryPbs = append(memoryPbs, &pb.Memory{
 			Type:    m.Type,
 			Summary: m.Summary,
@@ -331,19 +437,23 @@ func handleChatStreamViaAgent(c *gin.Context, app *core.App, sessionID, kbID, qu
 	}
 
 	grpcReq := &pb.ChatRequest{
-		SessionId: sessionID,
-		KbId:      kbID,
-		Question:  question,
-		Model:     model,
-		TopK:      int32(topK),
-		History:   history,
-		Memories:  memoryPbs,
+		SessionId:          sessionID,
+		KbId:               kbID,
+		Question:           question,
+		Model:              model,
+		TopK:               int32(topK),
+		History:            history,
+		Memories:           memoryPbs,
+		ProviderId:         providerID,
+		ProviderApiBaseUrl: providerBaseURL,
+		ProviderApiKey:     providerAPIKey,
+		ProviderModel:      providerModel,
 	}
 
 	stream, err := app.Agent.ChatCompletionStream(ctx, grpcReq)
 	if err != nil {
 		app.Logger.Warn("agent_stream_failed", "error", err.Error())
-		handleChatStreamLocal(c, app, sessionID, kbID, question, model, topK)
+		util.Fail(c, http.StatusServiceUnavailable, "AGENT_ERROR", "agent stream failed: "+err.Error(), nil)
 		return
 	}
 
@@ -405,10 +515,16 @@ func handleChatStreamViaAgent(c *gin.Context, app *core.App, sessionID, kbID, qu
 				"Q: "+coreSummary(question, 80)+" | A: "+coreSummary(fullAnswer, 120))
 
 			data, _ := json.Marshal(map[string]interface{}{
-				"type":       "result",
-				"answer":     ev.Result.Answer,
-				"degraded":   ev.Result.Degraded,
-				"latency_ms": ev.Result.LatencyMs,
+				"type":         "result",
+				"answer":       ev.Result.Answer,
+				"degraded":     ev.Result.Degraded,
+				"latency_ms":   ev.Result.LatencyMs,
+				"memory_count": len(managed.Memories),
+				"context_managed": map[string]interface{}{
+					"pressure": managed.Pressure.String(),
+					"actions":  managed.ActionsTaken,
+					"tokens":   managed.TokenCount,
+				},
 			})
 			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			flusher.Flush()
@@ -423,82 +539,6 @@ func handleChatStreamViaAgent(c *gin.Context, app *core.App, sessionID, kbID, qu
 			flusher.Flush()
 		}
 	}
-}
-
-// ── Streaming local fallback (SSE wrapping unary) ────────────────────────────
-
-func handleChatStreamLocal(c *gin.Context, app *core.App, sessionID, kbID, question, model string, topK int) {
-	ctx := c.Request.Context()
-
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.WriteHeader(http.StatusOK)
-
-	flusher, ok := c.Writer.(http.Flusher)
-	if !ok {
-		util.Internal(c, "streaming not supported")
-		return
-	}
-
-	// Send start event
-	data, _ := json.Marshal(map[string]interface{}{
-		"type":   "step",
-		"node":   "retrieve",
-		"status": "started",
-	})
-	fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-	flusher.Flush()
-
-	chunks, _, err := app.RetrieveChunks(ctx, kbID, question, topK)
-	if err != nil {
-		data, _ := json.Marshal(map[string]interface{}{"type": "error", "message": err.Error()})
-		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-		flusher.Flush()
-		return
-	}
-
-	data, _ = json.Marshal(map[string]interface{}{
-		"type":   "step",
-		"node":   "retrieve",
-		"status": "completed",
-		"detail": fmt.Sprintf("found %d chunks", len(chunks)),
-	})
-	fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-	flusher.Flush()
-
-	memories, _ := app.Store.ListSessionMemories(ctx, sessionID, 5)
-	prompt := app.BuildChatPrompt(question, chunks, memories)
-	answer, _, _, err := app.Ollama.Chat(ctx, model, prompt)
-	if err != nil {
-		data, _ := json.Marshal(map[string]interface{}{"type": "error", "message": err.Error()})
-		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-		flusher.Flush()
-		return
-	}
-
-	// Stream tokens (simple character-by-character for local fallback)
-	for i, r := range answer {
-		data, _ := json.Marshal(map[string]interface{}{
-			"type":  "token",
-			"token": string(r),
-			"index": i,
-		})
-		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-		flusher.Flush()
-	}
-
-	_, _ = app.Store.CreateMessage(ctx, sessionID, "assistant", answer)
-	_, _ = app.Store.CreateMemory(ctx, sessionID, "short_term",
-		"Q: "+coreSummary(question, 80)+" | A: "+coreSummary(answer, 120))
-
-	data, _ = json.Marshal(map[string]interface{}{
-		"type":     "result",
-		"answer":   answer,
-		"degraded": false,
-	})
-	fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-	flusher.Flush()
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -552,3 +592,57 @@ func handleGetTrace(app *core.App) gin.HandlerFunc {
 		util.Success(c, http.StatusOK, trace)
 	}
 }
+
+const compressPrompt = `请将以下对话压缩为一段结构化摘要。
+
+保留:
+1. 关键事实和数据
+2. 用户的核心意图和需求
+3. 未完成的任务或待确认事项
+4. 重要结论和决定
+5. 技术细节中的关键参数/配置
+
+丢弃:
+1. 寒暄和过程性对话
+2. 重复内容
+3. 工具调用的中间过程
+4. LLM的推理过程
+
+对话内容:
+%s
+
+输出格式:
+## 对话摘要
+{200字以内的核心摘要}
+
+## 关键事实
+- {事实1}
+- {事实2}
+
+## 未完成事项
+- {待办1}
+
+请直接输出，不要添加其他说明。`
+
+func llmCompressHistory(ctx context.Context, app *core.App, apiBaseURL, apiKey, model string, messages []store.Message) (string, error) {
+	var b strings.Builder
+	for _, m := range messages {
+		b.WriteString(fmt.Sprintf("[%s]: %s\n", m.Role, m.Content))
+	}
+
+	prompt := fmt.Sprintf(compressPrompt, b.String())
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	answer, _, _, err := app.Provider.Chat(ctx, apiBaseURL, apiKey, model, prompt)
+	if err != nil {
+		return "", err
+	}
+	return answer, nil
+}
+
+func joinStrings(ss []string, sep string) string {
+	return strings.Join(ss, sep)
+}
+

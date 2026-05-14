@@ -516,6 +516,7 @@ func handleChatStreamViaAgent(c *gin.Context, app *core.App, sessionID, kbID, qu
 
 			data, _ := json.Marshal(map[string]interface{}{
 				"type":         "result",
+				"session_id":   sessionID,
 				"answer":       ev.Result.Answer,
 				"degraded":     ev.Result.Degraded,
 				"latency_ms":   ev.Result.LatencyMs,

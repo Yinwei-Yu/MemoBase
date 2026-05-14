@@ -13,6 +13,36 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// StringArray scans PostgreSQL TEXT[] into []string without requiring lib/pq.
+type StringArray []string
+
+func (a *StringArray) Scan(src interface{}) error {
+	if src == nil {
+		*a = nil
+		return nil
+	}
+	s, ok := src.(string)
+	if !ok {
+		return fmt.Errorf("StringArray.Scan: expected string, got %T", src)
+	}
+	// PostgreSQL array literal: {val1,val2,val3}
+	s = strings.TrimPrefix(s, "{")
+	s = strings.TrimSuffix(s, "}")
+	if s == "" {
+		*a = []string{}
+		return nil
+	}
+	*a = strings.Split(s, ",")
+	return nil
+}
+
+func (a StringArray) Value() (interface{}, error) {
+	if a == nil {
+		return "{}", nil
+	}
+	return "{" + strings.Join(a, ",") + "}", nil
+}
+
 type Store struct {
 	DB *sqlx.DB
 }
@@ -111,7 +141,7 @@ type Memory struct {
 	AccessCount      int        `db:"access_count" json:"access_count"`
 	LastAccessedAt   *time.Time `db:"last_accessed_at" json:"last_accessed_at"`
 	EmbeddingID      *string    `db:"embedding_id" json:"embedding_id"`
-	SourceSessionIDs []string   `db:"source_session_ids" json:"source_session_ids"`
+	SourceSessionIDs StringArray `db:"source_session_ids" json:"source_session_ids"`
 	ExpiresAt        *time.Time `db:"expires_at" json:"expires_at"`
 	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
 }
@@ -645,12 +675,12 @@ func (s *Store) MergeMemories(ctx context.Context, keepID string, mergeIDs []str
 	query, args, _ := sqlx.In(`
 		SELECT source_session_ids FROM memories WHERE id IN (?)
 	`, mergeIDs)
-	var allSessionIDs []string
+	var allSessionIDs StringArray
 	rows, err := tx.QueryxContext(ctx, query, args...)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
-			var ids []string
+			var ids StringArray
 			if err := rows.Scan(&ids); err == nil {
 				allSessionIDs = append(allSessionIDs, ids...)
 			}
@@ -661,7 +691,7 @@ func (s *Store) MergeMemories(ctx context.Context, keepID string, mergeIDs []str
 	if len(allSessionIDs) > 0 {
 		_, err = tx.ExecContext(ctx, `
 			UPDATE memories SET source_session_ids = source_session_ids || $2 WHERE id=$1
-		`, keepID, allSessionIDs)
+		`, keepID, StringArray(allSessionIDs))
 		if err != nil {
 			return err
 		}
@@ -683,11 +713,11 @@ func (s *Store) ListAllUserIDs(ctx context.Context) ([]string, error) {
 }
 
 func (s *Store) CreateMemoryWithSessionSource(ctx context.Context, userID, sessionID, typ, summary string, importance float64) (Memory, error) {
-	mem := Memory{ID: "mem_" + uuid.NewString(), UserID: &userID, Type: typ, Summary: summary, Importance: importance, SourceSessionIDs: []string{sessionID}}
+	mem := Memory{ID: "mem_" + uuid.NewString(), UserID: &userID, Type: typ, Summary: summary, Importance: importance, SourceSessionIDs: StringArray{sessionID}}
 	_, err := s.DB.ExecContext(ctx, `
 		INSERT INTO memories (id, user_id, type, summary, importance, source_session_ids)
 		VALUES ($1,$2,$3,$4,$5,$6)
-	`, mem.ID, mem.UserID, mem.Type, mem.Summary, mem.Importance, stringSliceToPgArray(mem.SourceSessionIDs))
+	`, mem.ID, mem.UserID, mem.Type, mem.Summary, mem.Importance, mem.SourceSessionIDs)
 	if err != nil {
 		return mem, err
 	}
@@ -734,19 +764,6 @@ func (s *Store) TrimUserMemories(ctx context.Context, userID, typ string, maxCou
 	return res.RowsAffected()
 }
 
-func stringSliceToPgArray(ss []string) string {
-	if len(ss) == 0 {
-		return "{}"
-	}
-	result := "{"
-	for i, s := range ss {
-		if i > 0 {
-			result += ","
-		}
-		result += "\"" + s + "\""
-	}
-	return result + "}"
-}
 
 func (s *Store) CreateTrace(ctx context.Context, sessionID string, steps []map[string]interface{}) (Trace, error) {
 	stepsRaw, _ := json.Marshal(steps)
@@ -788,17 +805,18 @@ func IsNotFound(err error) bool {
 // ── Model Providers ────────────────────────────────────────────────────────
 
 type ModelProvider struct {
-	ID           string    `db:"id" json:"provider_id"`
-	UserID       string    `db:"user_id" json:"user_id"`
-	Name         string    `db:"name" json:"name"`
-	ProviderType string    `db:"provider_type" json:"provider_type"`
-	APIBaseURL   string    `db:"api_base_url" json:"api_base_url"`
-	APIKey       string    `db:"api_key" json:"-"`            // never in JSON responses
-	APIKeyMasked string    `json:"api_key_masked,omitempty"` // computed
-	DefaultModel string    `db:"default_model" json:"default_model"`
-	IsDefault    bool      `db:"is_default" json:"is_default"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	ID             string    `db:"id" json:"provider_id"`
+	UserID         string    `db:"user_id" json:"user_id"`
+	Name           string    `db:"name" json:"name"`
+	ProviderType   string    `db:"provider_type" json:"provider_type"`
+	APIBaseURL     string    `db:"api_base_url" json:"api_base_url"`
+	APIKey         string    `db:"api_key" json:"-"`            // never in JSON responses
+	APIKeyMasked   string    `json:"api_key_masked,omitempty"` // computed
+	DefaultModel   string    `db:"default_model" json:"default_model"`
+	EmbeddingModel string    `db:"embedding_model" json:"embedding_model"`
+	IsDefault      bool      `db:"is_default" json:"is_default"`
+	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
 }
 
 func maskKey(key string) string {
@@ -808,21 +826,22 @@ func maskKey(key string) string {
 	return "****" + key[len(key)-4:]
 }
 
-func (s *Store) CreateModelProvider(ctx context.Context, userID, name, providerType, apiBaseURL, apiKey, defaultModel string) (ModelProvider, error) {
+func (s *Store) CreateModelProvider(ctx context.Context, userID, name, providerType, apiBaseURL, apiKey, defaultModel, embeddingModel string) (ModelProvider, error) {
 	mp := ModelProvider{
-		ID:           "mp_" + uuid.NewString(),
-		UserID:       userID,
-		Name:         name,
-		ProviderType: providerType,
-		APIBaseURL:   apiBaseURL,
-		APIKey:       apiKey,
-		DefaultModel: defaultModel,
-		IsDefault:    false,
+		ID:             "mp_" + uuid.NewString(),
+		UserID:         userID,
+		Name:           name,
+		ProviderType:   providerType,
+		APIBaseURL:     apiBaseURL,
+		APIKey:         apiKey,
+		DefaultModel:   defaultModel,
+		EmbeddingModel: embeddingModel,
+		IsDefault:      false,
 	}
 	_, err := s.DB.ExecContext(ctx, `
-		INSERT INTO model_providers (id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-	`, mp.ID, mp.UserID, mp.Name, mp.ProviderType, mp.APIBaseURL, mp.APIKey, mp.DefaultModel, mp.IsDefault)
+		INSERT INTO model_providers (id, user_id, name, provider_type, api_base_url, api_key, default_model, embedding_model, is_default)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+	`, mp.ID, mp.UserID, mp.Name, mp.ProviderType, mp.APIBaseURL, mp.APIKey, mp.DefaultModel, mp.EmbeddingModel, mp.IsDefault)
 	if err != nil {
 		return mp, err
 	}
@@ -832,7 +851,7 @@ func (s *Store) CreateModelProvider(ctx context.Context, userID, name, providerT
 func (s *Store) GetModelProvider(ctx context.Context, userID, providerID string) (ModelProvider, error) {
 	var mp ModelProvider
 	err := s.DB.GetContext(ctx, &mp, `
-		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default, created_at, updated_at
+		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, embedding_model, is_default, created_at, updated_at
 		FROM model_providers WHERE id=$1 AND user_id=$2
 	`, providerID, userID)
 	if err != nil {
@@ -845,7 +864,7 @@ func (s *Store) GetModelProvider(ctx context.Context, userID, providerID string)
 func (s *Store) GetModelProviderRaw(ctx context.Context, providerID string) (ModelProvider, error) {
 	var mp ModelProvider
 	err := s.DB.GetContext(ctx, &mp, `
-		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default, created_at, updated_at
+		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, embedding_model, is_default, created_at, updated_at
 		FROM model_providers WHERE id=$1
 	`, providerID)
 	return mp, err
@@ -854,7 +873,7 @@ func (s *Store) GetModelProviderRaw(ctx context.Context, providerID string) (Mod
 func (s *Store) ListModelProviders(ctx context.Context, userID string) ([]ModelProvider, error) {
 	providers := []ModelProvider{}
 	if err := s.DB.SelectContext(ctx, &providers, `
-		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default, created_at, updated_at
+		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, embedding_model, is_default, created_at, updated_at
 		FROM model_providers WHERE user_id=$1
 		ORDER BY is_default DESC, created_at DESC
 	`, userID); err != nil {
@@ -869,7 +888,7 @@ func (s *Store) ListModelProviders(ctx context.Context, userID string) ([]ModelP
 func (s *Store) ListModelProvidersRaw(ctx context.Context, userID string) ([]ModelProvider, error) {
 	providers := []ModelProvider{}
 	if err := s.DB.SelectContext(ctx, &providers, `
-		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default, created_at, updated_at
+		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, embedding_model, is_default, created_at, updated_at
 		FROM model_providers WHERE user_id=$1
 		ORDER BY is_default DESC, created_at DESC
 	`, userID); err != nil {
@@ -878,7 +897,7 @@ func (s *Store) ListModelProvidersRaw(ctx context.Context, userID string) ([]Mod
 	return providers, nil
 }
 
-func (s *Store) UpdateModelProvider(ctx context.Context, userID, providerID string, name, apiBaseURL, apiKey, defaultModel *string, isDefault *bool) (ModelProvider, error) {
+func (s *Store) UpdateModelProvider(ctx context.Context, userID, providerID string, name, apiBaseURL, apiKey, defaultModel, embeddingModel *string, isDefault *bool) (ModelProvider, error) {
 	sets := make([]string, 0, 6)
 	args := make([]interface{}, 0, 6)
 	args = append(args, providerID, userID)
@@ -902,6 +921,11 @@ func (s *Store) UpdateModelProvider(ctx context.Context, userID, providerID stri
 	if defaultModel != nil {
 		sets = append(sets, fmt.Sprintf("default_model=$%d", argPos))
 		args = append(args, *defaultModel)
+		argPos++
+	}
+	if embeddingModel != nil {
+		sets = append(sets, fmt.Sprintf("embedding_model=$%d", argPos))
+		args = append(args, *embeddingModel)
 		argPos++
 	}
 	if isDefault != nil {
@@ -948,7 +972,7 @@ func (s *Store) DeleteModelProvider(ctx context.Context, userID, providerID stri
 func (s *Store) GetDefaultModelProvider(ctx context.Context, userID string) (ModelProvider, error) {
 	var mp ModelProvider
 	err := s.DB.GetContext(ctx, &mp, `
-		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default, created_at, updated_at
+		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, embedding_model, is_default, created_at, updated_at
 		FROM model_providers WHERE user_id=$1 AND is_default=TRUE
 		LIMIT 1
 	`, userID)

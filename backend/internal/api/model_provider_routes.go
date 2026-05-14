@@ -45,11 +45,12 @@ func handleListProviders(app *core.App) gin.HandlerFunc {
 func handleCreateProvider(app *core.App) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
-			Name         string `json:"name"`
-			ProviderType string `json:"provider_type"`
-			APIBaseURL   string `json:"api_base_url"`
-			APIKey       string `json:"api_key"`
-			DefaultModel string `json:"default_model"`
+			Name           string `json:"name"`
+			ProviderType   string `json:"provider_type"`
+			APIBaseURL     string `json:"api_base_url"`
+			APIKey         string `json:"api_key"`
+			DefaultModel   string `json:"default_model"`
+			EmbeddingModel string `json:"embedding_model"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "invalid payload", nil)
@@ -75,8 +76,10 @@ func handleCreateProvider(app *core.App) gin.HandlerFunc {
 			return
 		}
 
+		embeddingModel := strings.TrimSpace(req.EmbeddingModel)
+
 		userID := userIDFrom(c)
-		mp, err := app.Store.CreateModelProvider(c.Request.Context(), userID, name, providerType, apiBaseURL, req.APIKey, defaultModel)
+		mp, err := app.Store.CreateModelProvider(c.Request.Context(), userID, name, providerType, apiBaseURL, req.APIKey, defaultModel, embeddingModel)
 		if err != nil {
 			util.Internal(c, "failed to create provider")
 			return
@@ -90,11 +93,12 @@ func handleUpdateProvider(app *core.App) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		providerID := c.Param("id")
 		var req struct {
-			Name         *string `json:"name"`
-			APIBaseURL   *string `json:"api_base_url"`
-			APIKey       *string `json:"api_key"`
-			DefaultModel *string `json:"default_model"`
-			IsDefault    *bool   `json:"is_default"`
+			Name           *string `json:"name"`
+			APIBaseURL     *string `json:"api_base_url"`
+			APIKey         *string `json:"api_key"`
+			DefaultModel   *string `json:"default_model"`
+			EmbeddingModel *string `json:"embedding_model"`
+			IsDefault      *bool   `json:"is_default"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			util.Fail(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "invalid payload", nil)
@@ -124,9 +128,13 @@ func handleUpdateProvider(app *core.App) gin.HandlerFunc {
 			}
 			req.DefaultModel = &trimmed
 		}
+		if req.EmbeddingModel != nil {
+			trimmed := strings.TrimSpace(*req.EmbeddingModel)
+			req.EmbeddingModel = &trimmed
+		}
 
 		userID := userIDFrom(c)
-		mp, err := app.Store.UpdateModelProvider(c.Request.Context(), userID, providerID, req.Name, req.APIBaseURL, req.APIKey, req.DefaultModel, req.IsDefault)
+		mp, err := app.Store.UpdateModelProvider(c.Request.Context(), userID, providerID, req.Name, req.APIBaseURL, req.APIKey, req.DefaultModel, req.EmbeddingModel, req.IsDefault)
 		if err != nil {
 			if store.IsNotFound(err) {
 				util.Fail(c, http.StatusNotFound, "NOT_FOUND", "provider not found", nil)

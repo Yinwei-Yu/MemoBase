@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS model_providers (
     api_base_url TEXT NOT NULL,
     api_key TEXT NOT NULL DEFAULT '',
     default_model TEXT NOT NULL DEFAULT '',
+    embedding_model TEXT NOT NULL DEFAULT '',
     is_default BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

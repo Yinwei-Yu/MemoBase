@@ -86,6 +86,21 @@ export type MemoryItem = {
   created_at: string;
 };
 
+export type Memory = {
+  memory_id: string;
+  session_id?: string | null;
+  user_id?: string | null;
+  type: string;
+  summary: string;
+  importance: number;
+  access_count: number;
+  last_accessed_at?: string | null;
+  embedding_id?: string | null;
+  source_session_ids: string[];
+  expires_at?: string | null;
+  created_at: string;
+};
+
 export type ChatResponse = {
   session_id: string;
   answer: string;
@@ -94,6 +109,7 @@ export type ChatResponse = {
   trace_id?: string;
   degraded: boolean;
   latency_ms: number;
+  memory_count?: number;
   token_usage: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -145,6 +161,7 @@ export type ChatStreamResultEvent = {
   degraded?: boolean;
   latency_ms?: number;
   citations?: Citation[];
+  memory_count?: number;
 };
 
 export type ChatStreamErrorEvent = {
@@ -163,4 +180,27 @@ export type AgentStep = {
   node: string;
   status: "started" | "completed" | "skipped" | "error";
   detail: string;
+};
+
+// ── Model Provider ─────────────────────────────────────────────────────────
+
+export type ModelProvider = {
+  provider_id: string;
+  user_id: string;
+  name: string;
+  provider_type: string;
+  api_base_url: string;
+  api_key_masked?: string;
+  default_model: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProviderTestResult = {
+  success: boolean;
+  answer?: string;
+  error?: string;
+  latency_ms: number;
+  model: string;
 };

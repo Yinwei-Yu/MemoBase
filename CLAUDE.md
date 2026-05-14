@@ -41,3 +41,5 @@ cd frontend && npm install && npm run dev
 # Tests
 cd backend && go test ./internal/...
 ```
+
+所有任务在执行时，都需要先把要做的事写入agent-doc文件夹下的文档内，在执行过程中按照文档中的规划做

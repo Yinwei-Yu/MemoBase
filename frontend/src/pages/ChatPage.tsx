@@ -15,6 +15,7 @@ import type {
   Citation,
   DocumentContent,
   MessageItem,
+  ModelProvider,
   Pagination,
 } from "../lib/types/api";
 
@@ -42,6 +43,7 @@ export default function ChatPage() {
   const [question, setQuestion] = useState("");
   const [sessionId, setSessionId] = useState(urlSessionId);
   const [citationHistory, setCitationHistory] = useState<Citation[][]>([]);
+  const [memoryCounts, setMemoryCounts] = useState<number[]>([]);
   const [expandedCitationRows, setExpandedCitationRows] = useState<
     Record<number, boolean>
   >({});
@@ -53,6 +55,24 @@ export default function ChatPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
+  const [selectedProviderId, setSelectedProviderId] = useState<string>("");
+
+  // Fetch available providers
+  const providersQuery = useQuery({
+    queryKey: ["model-providers"],
+    queryFn: () => apiGet<ModelProvider[]>("/model-providers"),
+  });
+  const providers = providersQuery.data ?? [];
+
+  // Auto-select default provider when providers load
+  useEffect(() => {
+    if (providers.length > 0 && selectedProviderId === "") {
+      const defaultProvider = providers.find((p) => p.is_default);
+      if (defaultProvider) {
+        setSelectedProviderId(defaultProvider.provider_id);
+      }
+    }
+  }, [providers, selectedProviderId]);
 
   // Sync sessionId to URL
   useEffect(() => {
@@ -67,6 +87,7 @@ export default function ChatPage() {
         kb_id: kbId,
         session_id: sessionId || undefined,
         question: currentQuestion,
+        provider_id: selectedProviderId || undefined,
         use_agent: true,
         include_trace: false,
         top_k: 6,
@@ -74,6 +95,7 @@ export default function ChatPage() {
     onSuccess: (data) => {
       setSessionId(data.session_id);
       setCitationHistory((prev) => [...prev, data.citations ?? []]);
+      setMemoryCounts((prev) => [...prev, data.memory_count ?? 0]);
       setQuestion("");
       queryClient.invalidateQueries({
         queryKey: ["messages", data.session_id],
@@ -100,6 +122,7 @@ export default function ChatPage() {
           session_id: sessionId || undefined,
           question: currentQuestion,
           model: undefined,
+          provider_id: selectedProviderId || undefined,
           top_k: 6,
         },
         (event) => {
@@ -122,6 +145,7 @@ export default function ChatPage() {
               if (event.citations) {
                 setCitationHistory((prev) => [...prev, event.citations ?? []]);
               }
+              setMemoryCounts((prev) => [...prev, event.memory_count ?? 0]);
               break;
             case "error":
               setStreamError(event.message);
@@ -149,7 +173,7 @@ export default function ChatPage() {
       );
       abortRef.current = abort;
     },
-    [kbId, sessionId, queryClient],
+    [kbId, sessionId, queryClient, selectedProviderId],
   );
 
   const messageQuery = useQuery({
@@ -313,6 +337,8 @@ export default function ChatPage() {
                       )
                     : [];
                 const hasCitations = messageCitations.length > 0;
+                const memCount =
+                  msg.role === "assistant" ? (memoryCounts[assistantIndex] ?? 0) : 0;
                 const rowExpanded = !!expandedCitationRows[assistantIndex];
                 const visibleCitations = messageCitations.slice(
                   0,
@@ -328,6 +354,12 @@ export default function ChatPage() {
                       {msg.role === "user" ? "你" : "AI"}
                     </p>
                     <p className="qa-item-content">{msg.content}</p>
+
+                    {msg.role === "assistant" && memCount > 0 && (
+                      <p className="muted" style={{ fontSize: 'var(--text-xs)', margin: '0.25rem 0 0' }}>
+                        参考了 {memCount} 条记忆
+                      </p>
+                    )}
 
                     {msg.role === "assistant" && hasCitations && (
                       <div className="qa-citation-block">
@@ -410,6 +442,25 @@ export default function ChatPage() {
           </div>
 
           <form onSubmit={onSubmit} className="qa-composer">
+            {providers.length > 0 && (
+              <div className="qa-provider-select">
+                <label>
+                  <span>模型:</span>
+                  <select
+                    value={selectedProviderId}
+                    onChange={(e) => setSelectedProviderId(e.target.value)}
+                  >
+                    <option value="">Ollama (本地)</option>
+                    {providers.map((p) => (
+                      <option key={p.provider_id} value={p.provider_id}>
+                        {p.name} — {p.default_model}
+                        {p.is_default ? " (默认)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
             <textarea
               value={question}
               onChange={(e) => setQuestion(e.target.value)}

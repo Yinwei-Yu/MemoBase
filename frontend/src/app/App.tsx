@@ -7,6 +7,8 @@ import DocumentsPage from '../pages/DocumentsPage';
 import ChatPage from '../pages/ChatPage';
 import SessionsPage from '../pages/SessionsPage';
 import OpsPage from '../pages/OpsPage';
+import ModelProvidersPage from '../pages/ModelProvidersPage';
+import MemoriesPage from '../pages/MemoriesPage';
 import { useAuthStore } from '../stores/auth';
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
@@ -35,6 +37,8 @@ export default function App() {
           <Route path="/chat/:kbId/:sessionId?" element={<ChatPage />} />
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/ops" element={<OpsPage />} />
+          <Route path="/settings/providers" element={<ModelProvidersPage />} />
+          <Route path="/memories" element={<MemoriesPage />} />
         </Route>
       </Routes>
     </AppErrorBoundary>

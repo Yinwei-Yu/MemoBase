@@ -69,10 +69,24 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE TABLE IF NOT EXISTS memories (
     id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(id),
     type TEXT NOT NULL,
     summary TEXT NOT NULL,
+    importance REAL NOT NULL DEFAULT 0.5,
+    access_count INT NOT NULL DEFAULT 0,
+    last_accessed_at TIMESTAMPTZ,
+    embedding_id TEXT,
+    source_session_ids TEXT[] DEFAULT '{}',
+    expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS memory_access_log (
+    id TEXT PRIMARY KEY,
+    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    accessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    context TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS traces (
@@ -82,9 +96,27 @@ CREATE TABLE IF NOT EXISTS traces (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS model_providers (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    provider_type TEXT NOT NULL DEFAULT 'openai_compatible',
+    api_base_url TEXT NOT NULL,
+    api_key TEXT NOT NULL DEFAULT '',
+    default_model TEXT NOT NULL DEFAULT '',
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_documents_kb_status ON documents(kb_id, status);
 CREATE INDEX IF NOT EXISTS idx_chunks_kb ON document_chunks(kb_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_sessions_kb ON sessions(kb_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_mem_access ON memory_access_log(memory_id, accessed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(user_id, importance DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_expires ON memories(expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_model_providers_user ON model_providers(user_id);

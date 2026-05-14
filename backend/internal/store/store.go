@@ -102,11 +102,18 @@ type Message struct {
 }
 
 type Memory struct {
-	ID        string    `db:"id" json:"memory_id"`
-	SessionID string    `db:"session_id" json:"session_id"`
-	Type      string    `db:"type" json:"type"`
-	Summary   string    `db:"summary" json:"summary"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	ID               string     `db:"id" json:"memory_id"`
+	SessionID        *string    `db:"session_id" json:"session_id"`
+	UserID           *string    `db:"user_id" json:"user_id"`
+	Type             string     `db:"type" json:"type"`
+	Summary          string     `db:"summary" json:"summary"`
+	Importance       float64    `db:"importance" json:"importance"`
+	AccessCount      int        `db:"access_count" json:"access_count"`
+	LastAccessedAt   *time.Time `db:"last_accessed_at" json:"last_accessed_at"`
+	EmbeddingID      *string    `db:"embedding_id" json:"embedding_id"`
+	SourceSessionIDs []string   `db:"source_session_ids" json:"source_session_ids"`
+	ExpiresAt        *time.Time `db:"expires_at" json:"expires_at"`
+	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
 }
 
 type Trace struct {
@@ -202,6 +209,12 @@ func (s *Store) GetKB(ctx context.Context, userID, kbID string) (KnowledgeBase, 
 	}
 	_ = json.Unmarshal(kb.TagsRaw, &kb.Tags)
 	return kb, nil
+}
+
+func (s *Store) GetKBUserID(ctx context.Context, kbID string) (string, error) {
+	var userID string
+	err := s.DB.GetContext(ctx, &userID, `SELECT user_id FROM knowledge_bases WHERE id=$1 AND deleted_at IS NULL`, kbID)
+	return userID, err
 }
 
 func (s *Store) PatchKB(ctx context.Context, userID, kbID string, name, description *string, tags *[]string) (KnowledgeBase, error) {
@@ -530,26 +543,209 @@ func (s *Store) ListMessages(ctx context.Context, sessionID string, limit, offse
 }
 
 func (s *Store) CreateMemory(ctx context.Context, sessionID, typ, summary string) (Memory, error) {
-	mem := Memory{ID: "mem_" + uuid.NewString(), SessionID: sessionID, Type: typ, Summary: summary}
+	mem := Memory{ID: "mem_" + uuid.NewString(), SessionID: &sessionID, Type: typ, Summary: summary, Importance: 0.5}
 	_, err := s.DB.ExecContext(ctx, `
-		INSERT INTO memories (id, session_id, type, summary)
-		VALUES ($1,$2,$3,$4)
-	`, mem.ID, mem.SessionID, mem.Type, mem.Summary)
+		INSERT INTO memories (id, session_id, type, summary, importance)
+		VALUES ($1,$2,$3,$4,$5)
+	`, mem.ID, mem.SessionID, mem.Type, mem.Summary, mem.Importance)
 	if err != nil {
 		return mem, err
 	}
 	return mem, s.DB.GetContext(ctx, &mem, `
-		SELECT id, session_id, type, summary, created_at FROM memories WHERE id=$1
+		SELECT id, session_id, user_id, type, summary, importance, access_count, last_accessed_at, embedding_id, source_session_ids, expires_at, created_at FROM memories WHERE id=$1
 	`, mem.ID)
 }
 
 func (s *Store) ListSessionMemories(ctx context.Context, sessionID string, limit int) ([]Memory, error) {
 	memories := []Memory{}
 	err := s.DB.SelectContext(ctx, &memories, `
-		SELECT id, session_id, type, summary, created_at
+		SELECT id, session_id, user_id, type, summary, importance, access_count, last_accessed_at, embedding_id, source_session_ids, expires_at, created_at
 		FROM memories WHERE session_id=$1 ORDER BY created_at DESC LIMIT $2
 	`, sessionID, limit)
 	return memories, err
+}
+
+func (s *Store) CreateUserMemory(ctx context.Context, userID, typ, summary string, importance float64) (Memory, error) {
+	mem := Memory{ID: "mem_" + uuid.NewString(), UserID: &userID, Type: typ, Summary: summary, Importance: importance}
+	_, err := s.DB.ExecContext(ctx, `
+		INSERT INTO memories (id, user_id, type, summary, importance)
+		VALUES ($1,$2,$3,$4,$5)
+	`, mem.ID, mem.UserID, mem.Type, mem.Summary, mem.Importance)
+	if err != nil {
+		return mem, err
+	}
+	return mem, s.DB.GetContext(ctx, &mem, `
+		SELECT id, session_id, user_id, type, summary, importance, access_count, last_accessed_at, embedding_id, source_session_ids, expires_at, created_at FROM memories WHERE id=$1
+	`, mem.ID)
+}
+
+func (s *Store) ListUserMemories(ctx context.Context, userID string, typ string, limit int) ([]Memory, error) {
+	memories := []Memory{}
+	if typ == "" {
+		err := s.DB.SelectContext(ctx, &memories, `
+			SELECT id, session_id, user_id, type, summary, importance, access_count, last_accessed_at, embedding_id, source_session_ids, expires_at, created_at
+			FROM memories WHERE user_id=$1 ORDER BY importance DESC, created_at DESC LIMIT $2
+		`, userID, limit)
+		return memories, err
+	}
+	err := s.DB.SelectContext(ctx, &memories, `
+		SELECT id, session_id, user_id, type, summary, importance, access_count, last_accessed_at, embedding_id, source_session_ids, expires_at, created_at
+		FROM memories WHERE user_id=$1 AND type=$2 ORDER BY importance DESC, created_at DESC LIMIT $3
+	`, userID, typ, limit)
+	return memories, err
+}
+
+func (s *Store) GetMemory(ctx context.Context, memoryID string) (Memory, error) {
+	var mem Memory
+	err := s.DB.GetContext(ctx, &mem, `
+		SELECT id, session_id, user_id, type, summary, importance, access_count, last_accessed_at, embedding_id, source_session_ids, expires_at, created_at
+		FROM memories WHERE id=$1
+	`, memoryID)
+	return mem, err
+}
+
+func (s *Store) UpdateMemoryImportance(ctx context.Context, memoryID string, importance float64) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE memories SET importance=$2 WHERE id=$1`, memoryID, importance)
+	return err
+}
+
+func (s *Store) TouchMemoryAccess(ctx context.Context, memoryID string) error {
+	_, err := s.DB.ExecContext(ctx, `
+		UPDATE memories SET access_count = access_count + 1, last_accessed_at = NOW() WHERE id=$1
+	`, memoryID)
+	return err
+}
+
+func (s *Store) UpdateMemoryEmbeddingID(ctx context.Context, memoryID, embeddingID string) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE memories SET embedding_id=$2 WHERE id=$1`, memoryID, embeddingID)
+	return err
+}
+
+func (s *Store) DeleteExpiredMemories(ctx context.Context) (int64, error) {
+	res, err := s.DB.ExecContext(ctx, `
+		DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < NOW()
+	`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *Store) MergeMemories(ctx context.Context, keepID string, mergeIDs []string) error {
+	if len(mergeIDs) == 0 {
+		return nil
+	}
+	tx, err := s.DB.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Update keep memory's source_session_ids to include merged ones
+	query, args, _ := sqlx.In(`
+		SELECT source_session_ids FROM memories WHERE id IN (?)
+	`, mergeIDs)
+	var allSessionIDs []string
+	rows, err := tx.QueryxContext(ctx, query, args...)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var ids []string
+			if err := rows.Scan(&ids); err == nil {
+				allSessionIDs = append(allSessionIDs, ids...)
+			}
+		}
+	}
+
+	// Merge session IDs into keep memory
+	if len(allSessionIDs) > 0 {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE memories SET source_session_ids = source_session_ids || $2 WHERE id=$1
+		`, keepID, allSessionIDs)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Delete merged memories
+	delQuery, delArgs, _ := sqlx.In(`DELETE FROM memories WHERE id IN (?)`, mergeIDs)
+	if _, err := tx.ExecContext(ctx, delQuery, delArgs...); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) ListAllUserIDs(ctx context.Context) ([]string, error) {
+	var ids []string
+	err := s.DB.SelectContext(ctx, &ids, `SELECT DISTINCT user_id FROM memories WHERE user_id IS NOT NULL`)
+	return ids, err
+}
+
+func (s *Store) CreateMemoryWithSessionSource(ctx context.Context, userID, sessionID, typ, summary string, importance float64) (Memory, error) {
+	mem := Memory{ID: "mem_" + uuid.NewString(), UserID: &userID, Type: typ, Summary: summary, Importance: importance, SourceSessionIDs: []string{sessionID}}
+	_, err := s.DB.ExecContext(ctx, `
+		INSERT INTO memories (id, user_id, type, summary, importance, source_session_ids)
+		VALUES ($1,$2,$3,$4,$5,$6)
+	`, mem.ID, mem.UserID, mem.Type, mem.Summary, mem.Importance, stringSliceToPgArray(mem.SourceSessionIDs))
+	if err != nil {
+		return mem, err
+	}
+	return mem, s.DB.GetContext(ctx, &mem, `
+		SELECT id, session_id, user_id, type, summary, importance, access_count, last_accessed_at, embedding_id, source_session_ids, expires_at, created_at FROM memories WHERE id=$1
+	`, mem.ID)
+}
+
+func (s *Store) DeleteLowValueMemories(ctx context.Context, userID string, maxImportance float64, before time.Time) (int64, error) {
+	res, err := s.DB.ExecContext(ctx, `
+		DELETE FROM memories
+		WHERE user_id=$1 AND type='short_term'
+		  AND importance < $2 AND access_count = 0 AND created_at < $3
+	`, userID, maxImportance, before)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *Store) TrimUserMemories(ctx context.Context, userID, typ string, maxCount int) (int64, error) {
+	// Count current
+	var count int
+	if err := s.DB.GetContext(ctx, &count, `
+		SELECT COUNT(1) FROM memories WHERE user_id=$1 AND type=$2
+	`, userID, typ); err != nil {
+		return 0, err
+	}
+	if count <= maxCount {
+		return 0, nil
+	}
+	// Delete oldest low-importance ones
+	toDelete := count - maxCount
+	res, err := s.DB.ExecContext(ctx, `
+		DELETE FROM memories WHERE id IN (
+			SELECT id FROM memories WHERE user_id=$1 AND type=$2
+			ORDER BY importance ASC, created_at ASC
+			LIMIT $3
+		)
+	`, userID, typ, toDelete)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func stringSliceToPgArray(ss []string) string {
+	if len(ss) == 0 {
+		return "{}"
+	}
+	result := "{"
+	for i, s := range ss {
+		if i > 0 {
+			result += ","
+		}
+		result += "\"" + s + "\""
+	}
+	return result + "}"
 }
 
 func (s *Store) CreateTrace(ctx context.Context, sessionID string, steps []map[string]interface{}) (Trace, error) {
@@ -587,4 +783,174 @@ func IsNotFound(err error) bool {
 		return false
 	}
 	return errors.Is(err, sql.ErrNoRows)
+}
+
+// ── Model Providers ────────────────────────────────────────────────────────
+
+type ModelProvider struct {
+	ID           string    `db:"id" json:"provider_id"`
+	UserID       string    `db:"user_id" json:"user_id"`
+	Name         string    `db:"name" json:"name"`
+	ProviderType string    `db:"provider_type" json:"provider_type"`
+	APIBaseURL   string    `db:"api_base_url" json:"api_base_url"`
+	APIKey       string    `db:"api_key" json:"-"`            // never in JSON responses
+	APIKeyMasked string    `json:"api_key_masked,omitempty"` // computed
+	DefaultModel string    `db:"default_model" json:"default_model"`
+	IsDefault    bool      `db:"is_default" json:"is_default"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+}
+
+func maskKey(key string) string {
+	if len(key) <= 4 {
+		return "****"
+	}
+	return "****" + key[len(key)-4:]
+}
+
+func (s *Store) CreateModelProvider(ctx context.Context, userID, name, providerType, apiBaseURL, apiKey, defaultModel string) (ModelProvider, error) {
+	mp := ModelProvider{
+		ID:           "mp_" + uuid.NewString(),
+		UserID:       userID,
+		Name:         name,
+		ProviderType: providerType,
+		APIBaseURL:   apiBaseURL,
+		APIKey:       apiKey,
+		DefaultModel: defaultModel,
+		IsDefault:    false,
+	}
+	_, err := s.DB.ExecContext(ctx, `
+		INSERT INTO model_providers (id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+	`, mp.ID, mp.UserID, mp.Name, mp.ProviderType, mp.APIBaseURL, mp.APIKey, mp.DefaultModel, mp.IsDefault)
+	if err != nil {
+		return mp, err
+	}
+	return s.GetModelProvider(ctx, userID, mp.ID)
+}
+
+func (s *Store) GetModelProvider(ctx context.Context, userID, providerID string) (ModelProvider, error) {
+	var mp ModelProvider
+	err := s.DB.GetContext(ctx, &mp, `
+		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default, created_at, updated_at
+		FROM model_providers WHERE id=$1 AND user_id=$2
+	`, providerID, userID)
+	if err != nil {
+		return mp, err
+	}
+	mp.APIKeyMasked = maskKey(mp.APIKey)
+	return mp, nil
+}
+
+func (s *Store) GetModelProviderRaw(ctx context.Context, providerID string) (ModelProvider, error) {
+	var mp ModelProvider
+	err := s.DB.GetContext(ctx, &mp, `
+		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default, created_at, updated_at
+		FROM model_providers WHERE id=$1
+	`, providerID)
+	return mp, err
+}
+
+func (s *Store) ListModelProviders(ctx context.Context, userID string) ([]ModelProvider, error) {
+	providers := []ModelProvider{}
+	if err := s.DB.SelectContext(ctx, &providers, `
+		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default, created_at, updated_at
+		FROM model_providers WHERE user_id=$1
+		ORDER BY is_default DESC, created_at DESC
+	`, userID); err != nil {
+		return nil, err
+	}
+	for i := range providers {
+		providers[i].APIKeyMasked = maskKey(providers[i].APIKey)
+	}
+	return providers, nil
+}
+
+func (s *Store) ListModelProvidersRaw(ctx context.Context, userID string) ([]ModelProvider, error) {
+	providers := []ModelProvider{}
+	if err := s.DB.SelectContext(ctx, &providers, `
+		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default, created_at, updated_at
+		FROM model_providers WHERE user_id=$1
+		ORDER BY is_default DESC, created_at DESC
+	`, userID); err != nil {
+		return nil, err
+	}
+	return providers, nil
+}
+
+func (s *Store) UpdateModelProvider(ctx context.Context, userID, providerID string, name, apiBaseURL, apiKey, defaultModel *string, isDefault *bool) (ModelProvider, error) {
+	sets := make([]string, 0, 6)
+	args := make([]interface{}, 0, 6)
+	args = append(args, providerID, userID)
+	argPos := 3
+
+	if name != nil {
+		sets = append(sets, fmt.Sprintf("name=$%d", argPos))
+		args = append(args, *name)
+		argPos++
+	}
+	if apiBaseURL != nil {
+		sets = append(sets, fmt.Sprintf("api_base_url=$%d", argPos))
+		args = append(args, *apiBaseURL)
+		argPos++
+	}
+	if apiKey != nil {
+		sets = append(sets, fmt.Sprintf("api_key=$%d", argPos))
+		args = append(args, *apiKey)
+		argPos++
+	}
+	if defaultModel != nil {
+		sets = append(sets, fmt.Sprintf("default_model=$%d", argPos))
+		args = append(args, *defaultModel)
+		argPos++
+	}
+	if isDefault != nil {
+		if *isDefault {
+			// Clear other defaults first
+			_, _ = s.DB.ExecContext(ctx, `UPDATE model_providers SET is_default=FALSE, updated_at=NOW() WHERE user_id=$1 AND id<>$2`, userID, providerID)
+		}
+		sets = append(sets, fmt.Sprintf("is_default=$%d", argPos))
+		args = append(args, *isDefault)
+		argPos++
+	}
+	if len(sets) == 0 {
+		return s.GetModelProvider(ctx, userID, providerID)
+	}
+	sets = append(sets, "updated_at=NOW()")
+
+	query := fmt.Sprintf(`
+		UPDATE model_providers SET %s
+		WHERE id=$1 AND user_id=$2
+	`, strings.Join(sets, ", "))
+	res, err := s.DB.ExecContext(ctx, query, args...)
+	if err != nil {
+		return ModelProvider{}, err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return ModelProvider{}, sql.ErrNoRows
+	}
+	return s.GetModelProvider(ctx, userID, providerID)
+}
+
+func (s *Store) DeleteModelProvider(ctx context.Context, userID, providerID string) error {
+	res, err := s.DB.ExecContext(ctx, `DELETE FROM model_providers WHERE id=$1 AND user_id=$2`, providerID, userID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) GetDefaultModelProvider(ctx context.Context, userID string) (ModelProvider, error) {
+	var mp ModelProvider
+	err := s.DB.GetContext(ctx, &mp, `
+		SELECT id, user_id, name, provider_type, api_base_url, api_key, default_model, is_default, created_at, updated_at
+		FROM model_providers WHERE user_id=$1 AND is_default=TRUE
+		LIMIT 1
+	`, userID)
+	return mp, err
 }

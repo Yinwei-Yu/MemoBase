@@ -64,6 +64,11 @@ class AgentState(TypedDict):
     chat_history: Annotated[Sequence[BaseMessage], operator.add]
     memories: list[dict[str, str]]
 
+    # ── Provider routing ───────────────────────────────────────────
+    provider_api_base_url: str
+    provider_api_key: str
+    provider_model: str
+
     # ── Internal routing ───────────────────────────────────────────
     decision: str  # "respond" | "search"
     decision_reasoning: str
@@ -91,6 +96,9 @@ def initial_state(
     top_k: int = 6,
     chat_history: Sequence[BaseMessage] | None = None,
     memories: list[dict[str, str]] | None = None,
+    provider_api_base_url: str = "",
+    provider_api_key: str = "",
+    provider_model: str = "",
 ) -> AgentState:
     """Create the initial agent state from request parameters."""
     return AgentState(
@@ -101,6 +109,9 @@ def initial_state(
         top_k=top_k or 6,
         chat_history=list(chat_history or []),
         memories=memories or [],
+        provider_api_base_url=provider_api_base_url,
+        provider_api_key=provider_api_key,
+        provider_model=provider_model,
         decision="",
         decision_reasoning="",
         retrieved_docs=[],

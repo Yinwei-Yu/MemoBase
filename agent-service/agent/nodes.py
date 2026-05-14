@@ -11,13 +11,33 @@ import logging
 import time
 from typing import Any
 
-from agent.llm import get_chat_llm
+from agent.llm import get_llm_for_request
 from agent.state import AgentState
 from agent.tools import search_knowledge_base
 
 logger = logging.getLogger("agent-service.nodes")
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _resolve_llm(state: AgentState):
+    """Resolve the appropriate LLM based on provider info in state."""
+    provider_url = state.get("provider_api_base_url", "")
+    provider_key = state.get("provider_api_key", "")
+    provider_mdl = state.get("provider_model", "")
+    fallback = state.get("model", "")
+
+    if provider_url and provider_mdl:
+        logger.info("Using external provider: model=%s base_url=%s", provider_mdl, provider_url)
+    else:
+        logger.info("Using default Ollama: model=%s", fallback or "default")
+
+    return get_llm_for_request(
+        provider_api_base_url=provider_url,
+        provider_api_key=provider_key,
+        provider_model=provider_mdl,
+        fallback_model=fallback,
+    )
 
 
 def _add_trace(
@@ -90,6 +110,18 @@ def _format_chat_history(state: AgentState) -> str:
     return "\n".join(parts)
 
 
+def _format_memories(memories: list[dict[str, str]]) -> str:
+    """Format memories for prompt injection."""
+    if not memories:
+        return "(无历史记忆)"
+    parts = []
+    for m in memories:
+        mem_type = m.get("type", "?")
+        summary = m.get("summary", "")
+        parts.append(f"- [{mem_type}] {summary}")
+    return "\n".join(parts)
+
+
 # ── Node: Decide ─────────────────────────────────────────────────────────────
 
 
@@ -104,7 +136,7 @@ async def decide_node(state: AgentState) -> dict[str, Any]:
     logger.info("decide_node: question=%.60s", state["question"])
 
     try:
-        llm = get_chat_llm(state.get("model"))
+        llm = _resolve_llm(state)
         prompt = DECIDE_PROMPT.format(
             question=state["question"],
             chat_history=_format_chat_history(state),
@@ -201,7 +233,7 @@ async def grade_node(state: AgentState) -> dict[str, Any]:
     logger.info("grade_node: grading %d documents", len(docs))
 
     try:
-        llm = get_chat_llm(state.get("model"))
+        llm = _resolve_llm(state)
         docs_text = _format_docs(docs)
         prompt = GRADE_PROMPT.format(
             question=state["question"],
@@ -274,7 +306,7 @@ async def rewrite_node(state: AgentState) -> dict[str, Any]:
     logger.info("rewrite_node: attempt %d", count)
 
     try:
-        llm = get_chat_llm(state.get("model"))
+        llm = _resolve_llm(state)
         prompt = REWRITE_PROMPT.format(question=state["question"])
         response = await llm.ainvoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
@@ -325,18 +357,21 @@ async def generate_node(state: AgentState) -> dict[str, Any]:
     )
 
     try:
-        llm = get_chat_llm(state.get("model"))
+        llm = _resolve_llm(state)
+        memories_text = _format_memories(state.get("memories", []))
 
         if relevant_docs:
             context = _format_docs(relevant_docs)
             prompt = GENERATE_PROMPT.format(
                 question=state["question"],
                 context=context,
+                memories=memories_text,
             )
         else:
             prompt = NO_CONTEXT_PROMPT.format(
                 question=state["question"],
                 chat_history=_format_chat_history(state),
+                memories=memories_text,
             )
 
         response = await llm.ainvoke(prompt)

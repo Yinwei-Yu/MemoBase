@@ -16,15 +16,16 @@ type Config struct {
 	TokenTTL         time.Duration
 	DatabaseURL      string
 	StorageDir       string
-	QdrantURL        string
 	QdrantCollection string
-	EmbeddingDim     int
-	OllamaURL        string
-	OllamaChatModel  string
-	OllamaEmbedModel string
-	OllamaTimeout    time.Duration
 	EnableDemoUser   bool
 	AgentServiceURL  string
+	ContextWindow    int // model context window size, default 4096
+	OutputReserve    int // reserved tokens for output, default 1024
+
+	// Memory management
+	MemoryMaxShortTerm        int
+	MemoryMaxLongTerm         int
+	MemoryConsolidateInterval time.Duration
 }
 
 func Load() Config {
@@ -39,15 +40,15 @@ func Load() Config {
 		TokenTTL:         time.Duration(getInt("TOKEN_TTL_HOURS", 2)) * time.Hour,
 		DatabaseURL:      get("DATABASE_URL", "postgres://memo:memo@localhost:5432/memo?sslmode=disable"),
 		StorageDir:       get("STORAGE_DIR", "./storage"),
-		QdrantURL:        get("QDRANT_URL", "http://localhost:6333"),
 		QdrantCollection: get("QDRANT_COLLECTION", "kb_chunks"),
-		EmbeddingDim:     getInt("EMBEDDING_DIM", 768),
-		OllamaURL:        get("OLLAMA_URL", "http://localhost:11434"),
-		OllamaChatModel:  get("OLLAMA_CHAT_MODEL", "qwen2.5:3b"),
-		OllamaEmbedModel: get("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
-		OllamaTimeout:    time.Duration(getInt("OLLAMA_TIMEOUT_SEC", 90)) * time.Second,
 		EnableDemoUser:   getBool("ENABLE_DEMO_USER", enableDemoUserDefault),
 		AgentServiceURL:  get("AGENT_SERVICE_URL", "localhost:50051"),
+		ContextWindow:    getInt("CONTEXT_WINDOW", 4096),
+		OutputReserve:    getInt("OUTPUT_RESERVE", 1024),
+
+		MemoryMaxShortTerm:        getInt("MEMORY_MAX_SHORT_TERM", 50),
+		MemoryMaxLongTerm:         getInt("MEMORY_MAX_LONG_TERM", 200),
+		MemoryConsolidateInterval: time.Duration(getInt("MEMORY_CONSOLIDATE_INTERVAL_MINUTES", 60)) * time.Minute,
 	}
 }
 

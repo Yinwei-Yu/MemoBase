@@ -9,7 +9,6 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("APP_ENV", "")
 	t.Setenv("PORT", "")
 	t.Setenv("TOKEN_TTL_HOURS", "")
-	t.Setenv("EMBEDDING_DIM", "")
 
 	cfg := Load()
 	if cfg.AppEnv != "dev" {
@@ -20,9 +19,6 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.TokenTTL != 2*time.Hour {
 		t.Fatalf("TokenTTL = %v; want %v", cfg.TokenTTL, 2*time.Hour)
-	}
-	if cfg.EmbeddingDim != 768 {
-		t.Fatalf("EmbeddingDim = %d; want %d", cfg.EmbeddingDim, 768)
 	}
 }
 
@@ -45,13 +41,9 @@ func TestLoadWithEnvOverrides(t *testing.T) {
 
 func TestInvalidNumericEnvFallsBack(t *testing.T) {
 	t.Setenv("TOKEN_TTL_HOURS", "not-int")
-	t.Setenv("EMBEDDING_DIM", "bad")
 
 	cfg := Load()
 	if cfg.TokenTTL != 2*time.Hour {
 		t.Fatalf("TokenTTL = %v; want %v", cfg.TokenTTL, 2*time.Hour)
-	}
-	if cfg.EmbeddingDim != 768 {
-		t.Fatalf("EmbeddingDim = %d; want %d", cfg.EmbeddingDim, 768)
 	}
 }

@@ -5,16 +5,16 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
-from langchain_ollama import ChatOllama, OllamaEmbeddings
-
 from config import settings
 
 logger = logging.getLogger("agent-service.llm")
 
 
 @lru_cache(maxsize=4)
-def get_chat_llm(model: str | None = None) -> ChatOllama:
+def get_chat_llm(model: str | None = None):
     """Get or create the ChatOllama instance (cached)."""
+    from langchain_ollama import ChatOllama
+
     model_name = model or settings.ollama_chat_model
     logger.info("Creating ChatOllama: model=%s url=%s", model_name, settings.ollama_url)
     return ChatOllama(
@@ -29,7 +29,7 @@ def get_provider_llm(
     api_base_url: str,
     api_key: str,
     model: str,
-) -> "ChatOpenAI":
+):
     """Get or create a ChatOpenAI instance for an external provider.
 
     This is NOT cached — each unique provider config gets its own instance.
@@ -72,20 +72,51 @@ def get_llm_for_request(
             api_key=provider_api_key,
             model=provider_model,
         )
-    logger.info("Using default Ollama: model=%s", fallback_model or settings.ollama_chat_model)
+    ollama_model = fallback_model or settings.ollama_chat_model
+    if not ollama_model:
+        raise ValueError(
+            "未配置模型。请在「模型配置」页面添加一个模型提供商，或设置 OLLAMA_CHAT_MODEL 环境变量。"
+        )
+    logger.info("Using default Ollama: model=%s", ollama_model)
     return get_chat_llm(fallback_model)
 
 
 @lru_cache(maxsize=1)
-def get_embeddings() -> OllamaEmbeddings:
-    """Get or create the OllamaEmbeddings instance (cached)."""
+def get_embeddings():
+    """Get or create the embeddings instance (cached).
+
+    Supports two providers:
+    - ollama: uses OllamaEmbeddings (default)
+    - openai_compatible: uses OpenAIEmbeddings with custom base_url
+    """
+    provider = settings.embed_provider.lower()
+
+    if provider == "openai_compatible" and settings.embed_api_base_url:
+        from langchain_openai import OpenAIEmbeddings
+
+        model = settings.embed_model or "text-embedding-3-small"
+        logger.info(
+            "Creating OpenAIEmbeddings: model=%s base_url=%s",
+            model,
+            settings.embed_api_base_url,
+        )
+        return OpenAIEmbeddings(
+            model=model,
+            openai_api_key=settings.embed_api_key or "dummy",
+            openai_api_base=settings.embed_api_base_url,
+        )
+
+    # Default: Ollama
+    from langchain_ollama import OllamaEmbeddings
+
+    model = settings.embed_model or settings.ollama_embed_model
     logger.info(
         "Creating OllamaEmbeddings: model=%s url=%s",
-        settings.ollama_embed_model,
+        model,
         settings.ollama_url,
     )
     return OllamaEmbeddings(
-        model=settings.ollama_embed_model,
+        model=model,
         base_url=settings.ollama_url,
     )
 

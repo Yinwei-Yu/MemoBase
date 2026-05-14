@@ -9,9 +9,15 @@ class Settings(BaseSettings):
     grpc_port: int = 50051
 
     # Ollama
-    ollama_url: str = "http://ollama:11434"
-    ollama_chat_model: str = "qwen2.5:3b"
+    ollama_url: str = "http://host.docker.internal:11434"
+    ollama_chat_model: str = ""
     ollama_embed_model: str = "nomic-embed-text"
+
+    # Embedding Provider (ollama or openai_compatible)
+    embed_provider: str = "ollama"
+    embed_api_base_url: str = ""
+    embed_api_key: str = ""
+    embed_model: str = ""
 
     # Qdrant
     qdrant_url: str = "http://qdrant:6333"

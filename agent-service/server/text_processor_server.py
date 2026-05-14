@@ -155,13 +155,16 @@ class TextProcessorServiceServicer(agent_pb2_grpc.TextProcessorServiceServicer):
             retriever = HybridRetriever()
             qdrant = retriever.qdrant
 
-            # Ensure collection exists
-            first_vec = embeddings.embed_query(chunks[0])
-            expected_dim = len(first_vec)
+            # Batch embed all chunks at once (much faster than sequential)
+            all_vectors = embeddings.embed_documents(chunks)
+            expected_dim = len(all_vectors[0])
+
+            # Collection name with dimension suffix for model switching support
+            dim_collection = f"{collection}__d{expected_dim}"
 
             from qdrant_client.models import Distance, VectorParams
             try:
-                collection_info = qdrant.get_collection(collection)
+                collection_info = qdrant.get_collection(dim_collection)
                 existing_dim = None
                 if collection_info.config.params.vectors:
                     existing_dim = collection_info.config.params.vectors.size
@@ -172,21 +175,15 @@ class TextProcessorServiceServicer(agent_pb2_grpc.TextProcessorServiceServicer):
                     )
             except Exception:
                 qdrant.create_collection(
-                    collection_name=collection,
+                    collection_name=dim_collection,
                     vectors_config=VectorParams(size=expected_dim, distance=Distance.COSINE),
                 )
 
-            # Build points: first chunk already embedded
+            # Build points from batch embeddings
             from qdrant_client.models import PointStruct
 
-            points = [PointStruct(
-                id=str(uuid.uuid5(uuid.NAMESPACE_OID, f"chunk:{chunk_ids[0]}")),
-                vector=first_vec,
-                payload={"kb_id": kb_id, "doc_id": doc_id, "chunk_id": chunk_ids[0], "chunk_index": 0, "source": "document"},
-            )]
-
-            for i in range(1, len(chunks)):
-                vec = embeddings.embed_query(chunks[i])
+            points = []
+            for i, vec in enumerate(all_vectors):
                 points.append(PointStruct(
                     id=str(uuid.uuid5(uuid.NAMESPACE_OID, f"chunk:{chunk_ids[i]}")),
                     vector=vec,
@@ -194,10 +191,10 @@ class TextProcessorServiceServicer(agent_pb2_grpc.TextProcessorServiceServicer):
                 ))
 
             # Delete old points for this doc, then upsert
-            qdrant.delete(collection_name=collection, points_selector=Filter(
+            qdrant.delete(collection_name=dim_collection, points_selector=Filter(
                 must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))],
             ))
-            qdrant.upsert(collection_name=collection, points=points)
+            qdrant.upsert(collection_name=dim_collection, points=points)
 
             # Invalidate BM25 cache
             retriever.invalidate_cache(kb_id)
@@ -222,17 +219,44 @@ class TextProcessorServiceServicer(agent_pb2_grpc.TextProcessorServiceServicer):
         request: agent_pb2.DeleteDocVectorsRequest,
         context: grpc.aio.ServicerContext,
     ) -> agent_pb2.DeleteDocVectorsResponse:
-        """Delete all Qdrant vectors for a document."""
+        """Delete all Qdrant vectors for a document.
+
+        Searches for all dimension-suffixed collections matching the base name.
+        """
         try:
             retriever = HybridRetriever()
             qdrant = retriever.qdrant
-            qdrant.delete(
-                collection_name=request.collection_name,
-                points_selector=Filter(
-                    must=[FieldCondition(key="doc_id", match=MatchValue(value=request.doc_id))],
-                ),
-            )
-            logger.info("DeleteDocumentVectors: collection=%s doc=%s", request.collection_name, request.doc_id)
+            base_name = request.collection_name
+
+            # Find all collections matching base_name__d{dim} pattern
+            collections = qdrant.get_collections().collections
+            deleted_count = 0
+            for col in collections:
+                if col.name.startswith(f"{base_name}__d"):
+                    try:
+                        qdrant.delete(
+                            collection_name=col.name,
+                            points_selector=Filter(
+                                must=[FieldCondition(key="doc_id", match=MatchValue(value=request.doc_id))],
+                            ),
+                        )
+                        deleted_count += 1
+                    except Exception:
+                        pass  # Collection may be empty or not exist
+
+            if deleted_count == 0:
+                # Fallback: try exact name (backward compatibility)
+                try:
+                    qdrant.delete(
+                        collection_name=base_name,
+                        points_selector=Filter(
+                            must=[FieldCondition(key="doc_id", match=MatchValue(value=request.doc_id))],
+                        ),
+                    )
+                except Exception:
+                    pass
+
+            logger.info("DeleteDocumentVectors: base=%s doc=%s cleaned=%d collections", base_name, request.doc_id, deleted_count)
             return agent_pb2.DeleteDocVectorsResponse(success=True)
         except Exception as e:
             logger.exception("DeleteDocumentVectors failed")
@@ -243,13 +267,35 @@ class TextProcessorServiceServicer(agent_pb2_grpc.TextProcessorServiceServicer):
         request: agent_pb2.DeleteKBCollectionRequest,
         context: grpc.aio.ServicerContext,
     ) -> agent_pb2.DeleteKBCollectionResponse:
-        """Delete entire Qdrant collection for a KB."""
+        """Delete entire Qdrant collection for a KB.
+
+        Deletes all dimension-suffixed collections matching the base name.
+        """
         try:
             retriever = HybridRetriever()
             qdrant = retriever.qdrant
-            qdrant.delete_collection(collection_name=request.collection_name)
-            retriever.invalidate_cache(request.collection_name)
-            logger.info("DeleteKBCollection: collection=%s", request.collection_name)
+            base_name = request.collection_name
+
+            # Find and delete all collections matching base_name__d{dim} pattern
+            collections = qdrant.get_collections().collections
+            deleted_count = 0
+            for col in collections:
+                if col.name.startswith(f"{base_name}__d"):
+                    try:
+                        qdrant.delete_collection(collection_name=col.name)
+                        deleted_count += 1
+                    except Exception:
+                        pass
+
+            # Also try exact name for backward compatibility
+            try:
+                qdrant.delete_collection(collection_name=base_name)
+                deleted_count += 1
+            except Exception:
+                pass
+
+            retriever.invalidate_cache(base_name)
+            logger.info("DeleteKBCollection: base=%s deleted=%d collections", base_name, deleted_count)
             return agent_pb2.DeleteKBCollectionResponse(success=True)
         except Exception as e:
             logger.exception("DeleteKBCollection failed")

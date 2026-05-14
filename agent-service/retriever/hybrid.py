@@ -93,6 +93,7 @@ class HybridRetriever:
 
         self._qdrant: QdrantClient | None = None
         self._bm25_cache: dict[str, tuple[list[str], BM25Okapi]] = {}
+        self._embedding_dim: int | None = None
 
     @property
     def qdrant(self) -> QdrantClient:
@@ -100,14 +101,25 @@ class HybridRetriever:
             self._qdrant = QdrantClient(url=self.qdrant_url)
         return self._qdrant
 
+    def _get_embedding_dim(self) -> int:
+        """Get the current embedding dimension (lazy, cached)."""
+        if self._embedding_dim is None:
+            from agent.llm import get_embeddings
+            embeddings = get_embeddings()
+            # Single embed call to determine dimension
+            test_vec = embeddings.embed_query("dimension_probe")
+            self._embedding_dim = len(test_vec)
+        return self._embedding_dim
+
     def _collection_name(self, kb_id: str) -> str:
-        """Build Qdrant collection name: {prefix}__{sanitized_kb_id}."""
+        """Build Qdrant collection name: {prefix}__{kb_id}__d{dim}."""
         prefix = (
             re.sub(r"[^a-zA-Z0-9_-]+", "_", self.collection_prefix).strip("_")
             or "kb_chunks"
         )
         kb_part = re.sub(r"[^a-zA-Z0-9_-]+", "_", kb_id).strip("_") or "default"
-        return f"{prefix}__{kb_part}"
+        dim = self._get_embedding_dim()
+        return f"{prefix}__{kb_part}__d{dim}"
 
     def _fetch_chunks(self, kb_id: str) -> list[dict[str, Any]]:
         """Fetch all chunks for a KB from PostgreSQL."""

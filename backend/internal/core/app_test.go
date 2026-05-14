@@ -5,42 +5,12 @@ import (
 	"testing"
 
 	"memobase/backend/internal/config"
-
-	"github.com/google/uuid"
 )
 
 func assertNearlyEqual(t *testing.T, got, want float64) {
 	t.Helper()
 	if math.Abs(got-want) > 1e-9 {
 		t.Fatalf("got %f; want %f", got, want)
-	}
-}
-
-func TestQdrantPointID(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		chunkID string
-	}{
-		{name: "uuid input", chunkID: uuid.NewString()},
-		{name: "prefixed id", chunkID: "ck_" + uuid.NewString()},
-		{name: "plain text", chunkID: "chunk-1"},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := qdrantPointID(tt.chunkID)
-			if _, err := uuid.Parse(got); err != nil {
-				t.Fatalf("qdrantPointID(%q) = %q; not a valid UUID: %v", tt.chunkID, got, err)
-			}
-			again := qdrantPointID(tt.chunkID)
-			if got != again {
-				t.Fatalf("qdrantPointID(%q) not deterministic: %q vs %q", tt.chunkID, got, again)
-			}
-		})
 	}
 }
 

@@ -201,7 +201,9 @@ func handleDeleteDocument(app *core.App) gin.HandlerFunc {
 			util.Internal(c, "failed to delete document")
 			return
 		}
-		_ = app.Qdrant.DeleteByDoc(c.Request.Context(), app.QdrantCollectionForKB(kbID), docID)
+		if app.Agent != nil {
+			_ = app.Agent.DeleteDocumentVectors(c.Request.Context(), app.QdrantCollectionForKB(kbID), docID)
+		}
 		app.InvalidateBM25Index(kbID)
 		util.Success(c, http.StatusOK, gin.H{"deleted": true})
 	}

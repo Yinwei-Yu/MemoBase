@@ -50,29 +50,23 @@ func handleReadyz(app *core.App) gin.HandlerFunc {
 		} else {
 			checks["db"] = "up"
 		}
-		if err := app.Qdrant.Ready(ctx); err != nil {
-			checks["qdrant"] = "down"
-			status = "not_ready"
-		} else {
-			checks["qdrant"] = "up"
-		}
-		if err := app.Ollama.Ready(ctx); err != nil {
-			checks["model_gateway"] = "down"
-			status = "not_ready"
-		} else {
-			checks["model_gateway"] = "up"
-		}
 		if app.Agent != nil {
 			healthCtx, healthCancel := context.WithTimeout(ctx, 2*time.Second)
-			_, err := app.Agent.HealthCheck(healthCtx)
+			resp, err := app.Agent.HealthCheck(healthCtx)
 			healthCancel()
 			if err != nil {
 				checks["agent_service"] = "down"
+				status = "not_ready"
 			} else {
-				checks["agent_service"] = "up"
+				checks["agent_service"] = resp.Status
+				// Propagate sub-checks from agent service (qdrant, ollama, etc.)
+				for k, v := range resp.Checks {
+					checks[k] = v
+				}
 			}
 		} else {
 			checks["agent_service"] = "disabled"
+			status = "not_ready"
 		}
 		checks["storage"] = "up"
 		if status != "ready" {

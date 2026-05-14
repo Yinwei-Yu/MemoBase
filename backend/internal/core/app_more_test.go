@@ -1,11 +1,6 @@
 package core
 
-import (
-	"strings"
-	"testing"
-
-	"memobase/backend/internal/store"
-)
+import "testing"
 
 func TestSanitizeQdrantCollectionPart(t *testing.T) {
 	t.Parallel()
@@ -52,36 +47,5 @@ func TestSummarize(t *testing.T) {
 				t.Fatalf("summarize(%q, %d) = %q; want %q", tt.text, tt.n, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestBuildChatPrompt(t *testing.T) {
-	t.Parallel()
-
-	app := &App{}
-	prompt := app.BuildChatPrompt(
-		"问题是什么？",
-		[]RetrievedChunk{
-			{ChunkID: "ck1", Content: "chunk one"},
-			{ChunkID: "ck2", Content: "chunk two"},
-		},
-		[]store.Memory{
-			{Summary: "memory summary"},
-		},
-	)
-
-	mustContain := []string{
-		"[上下文片段]",
-		"[1] (ck1) chunk one",
-		"[2] (ck2) chunk two",
-		"[记忆]",
-		"memory summary",
-		"[用户问题]",
-		"问题是什么？",
-	}
-	for _, s := range mustContain {
-		if !strings.Contains(prompt, s) {
-			t.Fatalf("prompt missing %q:\n%s", s, prompt)
-		}
 	}
 }

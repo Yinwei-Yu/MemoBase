@@ -26,6 +26,8 @@ func main() {
 	}
 	defer app.Close()
 
+	app.StartMemoryConsolidator()
+
 	r := api.NewServer(app)
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

@@ -7,6 +7,7 @@ import pytest
 from agent.nodes import (
     _format_chat_history,
     _format_docs,
+    _format_memories,
     _parse_json_response,
     decide_node,
     generate_node,
@@ -76,6 +77,40 @@ class TestFormatChatHistory:
         result = _format_chat_history(state)
         assert "Hello" in result
         assert "Hi there" in result
+
+
+class TestFormatMemories:
+    def test_empty_memories(self):
+        result = _format_memories([])
+        assert "无历史记忆" in result
+
+    def test_none_memories(self):
+        result = _format_memories(None)
+        assert "无历史记忆" in result
+
+    def test_single_memory(self):
+        memories = [{"type": "short_term", "summary": "用户问了Go问题"}]
+        result = _format_memories(memories)
+        assert "short_term" in result
+        assert "用户问了Go问题" in result
+
+    def test_multiple_memories(self):
+        memories = [
+            {"type": "short_term", "summary": "Q: 什么是AI"},
+            {"type": "long_term", "summary": "用户熟悉Go语言"},
+            {"type": "fact", "summary": "用户公司用K8s"},
+        ]
+        result = _format_memories(memories)
+        assert "short_term" in result
+        assert "long_term" in result
+        assert "fact" in result
+        assert "用户熟悉Go语言" in result
+
+    def test_memory_missing_fields(self):
+        memories = [{"type": "long_term"}, {"summary": "some fact"}]
+        result = _format_memories(memories)
+        assert "long_term" in result
+        assert "some fact" in result
 
 
 class TestDecideNode:

@@ -26,6 +26,11 @@ message ChatRequest {
   int32 top_k = 5;
   repeated Message history = 6; // chat history from DB
   repeated Memory memories = 7; // session memories from DB
+  // Provider routing (optional — empty means use default Ollama)
+  string provider_id = 8;
+  string provider_api_base_url = 9;
+  string provider_api_key = 10;
+  string provider_model = 11;   // model name from provider config
 }
 
 message Message {
@@ -140,6 +145,15 @@ service TextProcessorService {
 
   // Health check.
   rpc TextHealthCheck(HealthRequest) returns (HealthResponse);
+
+  // Index a document: chunk + embed + upsert to Qdrant.
+  rpc IndexDocument(IndexDocumentRequest) returns (IndexDocumentResponse);
+
+  // Delete all vectors for a document from Qdrant.
+  rpc DeleteDocumentVectors(DeleteDocVectorsRequest) returns (DeleteDocVectorsResponse);
+
+  // Delete entire Qdrant collection for a KB.
+  rpc DeleteKBCollection(DeleteKBCollectionRequest) returns (DeleteKBCollectionResponse);
 }
 
 message RetrieveChunksRequest {
@@ -186,4 +200,39 @@ message ChunkRequest {
 
 message ChunkResponse {
   repeated string chunks = 1;
+}
+
+// ─── IndexDocument ───────────────────────────────────────────────────────────
+
+message IndexDocumentRequest {
+  string kb_id = 1;
+  string doc_id = 2;
+  string content = 3;           // raw document text (already read + decoded)
+  int32 chunk_size = 4;         // default 500
+  int32 overlap = 5;            // default 100
+  string collection_name = 6;   // e.g. "kb_chunks__{kbID}"
+}
+
+message IndexDocumentResponse {
+  int32 chunk_count = 1;
+  repeated string chunk_ids = 2;
+  bool success = 3;
+  string error_message = 4;
+}
+
+message DeleteDocVectorsRequest {
+  string collection_name = 1;
+  string doc_id = 2;
+}
+
+message DeleteDocVectorsResponse {
+  bool success = 1;
+}
+
+message DeleteKBCollectionRequest {
+  string collection_name = 1;
+}
+
+message DeleteKBCollectionResponse {
+  bool success = 1;
 }

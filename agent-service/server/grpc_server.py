@@ -30,10 +30,12 @@ class AgentServiceServicer(agent_pb2_grpc.AgentServiceServicer):
         context: grpc.aio.ServicerContext,
     ) -> agent_pb2.ChatResponse:
         logger.info(
-            "ChatCompletion: kb_id=%s session_id=%s question=%.80s",
+            "ChatCompletion: kb_id=%s session_id=%s question=%.80s provider_id=%s model=%s",
             request.kb_id,
             request.session_id,
             request.question,
+            request.provider_id or "(default)",
+            request.provider_model or request.model or "(default)",
         )
         started = time.monotonic()
 
@@ -60,6 +62,9 @@ class AgentServiceServicer(agent_pb2_grpc.AgentServiceServicer):
                 top_k=request.top_k or 6,
                 chat_history=chat_history,
                 memories=memories,
+                provider_api_base_url=request.provider_api_base_url or "",
+                provider_api_key=request.provider_api_key or "",
+                provider_model=request.provider_model or "",
             )
 
             # Run the agent graph
@@ -129,10 +134,12 @@ class AgentServiceServicer(agent_pb2_grpc.AgentServiceServicer):
         context: grpc.aio.ServicerContext,
     ) -> AsyncIterator[agent_pb2.ChatEvent]:
         logger.info(
-            "ChatCompletionStream: kb_id=%s session_id=%s question=%.80s",
+            "ChatCompletionStream: kb_id=%s session_id=%s question=%.80s provider_id=%s model=%s",
             request.kb_id,
             request.session_id,
             request.question,
+            request.provider_id or "(default)",
+            request.provider_model or request.model or "(default)",
         )
         started = time.monotonic()
 
@@ -157,6 +164,9 @@ class AgentServiceServicer(agent_pb2_grpc.AgentServiceServicer):
                 top_k=request.top_k or 6,
                 chat_history=chat_history,
                 memories=memories,
+                provider_api_base_url=request.provider_api_base_url or "",
+                provider_api_key=request.provider_api_key or "",
+                provider_model=request.provider_model or "",
             )
 
             # Emit step events as we stream

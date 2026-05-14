@@ -17,6 +17,25 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
+export class UnauthorizedError extends Error {
+  constructor() {
+    super('Unauthorized');
+    this.name = 'UnauthorizedError';
+  }
+}
+
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      useAuthStore.getState().logout();
+      window.location.replace('/login');
+      return new Promise(() => {});
+    }
+    return Promise.reject(error);
+  },
+);
+
 function toApiError(err: unknown): Error {
   if (axios.isAxiosError(err)) {
     const data = err.response?.data as ApiErrorBody | undefined;

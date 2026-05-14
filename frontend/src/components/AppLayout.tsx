@@ -6,6 +6,8 @@ const links = [
   { to: '/kbs', label: 'Knowledge Bases', note: '管理知识库资产', short: 'KB' },
   { to: '/sessions', label: 'Sessions', note: '查看会话与消息', short: 'SE' },
   { to: '/ops', label: 'System Health', note: '实时状态监控', short: 'OP' },
+  { to: '/settings/providers', label: 'Model Providers', note: '配置 AI 模型', short: 'MP' },
+  { to: '/memories', label: 'Memories', note: '管理 AI 记忆', short: 'MM' },
 ];
 
 export default function AppLayout() {

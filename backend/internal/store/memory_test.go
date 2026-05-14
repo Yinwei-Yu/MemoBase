@@ -158,19 +158,22 @@ func TestStringSliceToPgArray(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		input []string
+		input StringArray
 		want  string
 	}{
 		{nil, "{}"},
-		{[]string{}, "{}"},
-		{[]string{"a"}, `{"a"}`},
-		{[]string{"a", "b", "c"}, `{"a","b","c"}`},
-		{[]string{"sess_001", "sess_002"}, `{"sess_001","sess_002"}`},
+		{StringArray{}, "{}"},
+		{StringArray{"a"}, "{a}"},
+		{StringArray{"a", "b", "c"}, "{a,b,c}"},
+		{StringArray{"sess_001", "sess_002"}, "{sess_001,sess_002}"},
 	}
 	for _, tt := range tests {
-		got := stringSliceToPgArray(tt.input)
+		got, err := tt.input.Value()
+		if err != nil {
+			t.Fatalf("StringArray.Value() error: %v", err)
+		}
 		if got != tt.want {
-			t.Errorf("stringSliceToPgArray(%v) = %q; want %q", tt.input, got, tt.want)
+			t.Errorf("StringArray(%v).Value() = %q; want %q", tt.input, got, tt.want)
 		}
 	}
 }

@@ -41,10 +41,40 @@ const mockHealthData = {
   },
 };
 
+const mockMetricsData = {
+  data: {
+    data: {
+      in_flight: 2,
+      total_requests: 100,
+      by_route: [
+        { method: 'GET', route: '/api/v1/healthz', count: 50, avg_seconds: 0.001 },
+      ],
+      status_breakdown: {
+        '2xx': 95,
+        '4xx': 3,
+        '5xx': 2,
+      },
+    },
+  },
+};
+
+const mockPrometheusData = {
+  data: {
+    data: {
+      series: [],
+    },
+  },
+};
+
 describe('OpsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(client.get).mockResolvedValue(mockHealthData);
+    vi.mocked(client.get).mockImplementation((url: string) => {
+      if (url === '/readyz') return Promise.resolve(mockHealthData);
+      if (url === '/metrics/summary') return Promise.resolve(mockMetricsData);
+      if (url === '/metrics/prometheus') return Promise.resolve(mockPrometheusData);
+      return Promise.resolve(mockHealthData);
+    });
   });
 
   it('renders heading', () => {
@@ -61,7 +91,7 @@ describe('OpsPage', () => {
   it('shows overall status', async () => {
     renderOpsPage();
     await waitFor(() => {
-      expect(screen.getByText('ready')).toBeInTheDocument();
+      expect(screen.getByText(/正常运行/)).toBeInTheDocument();
     });
   });
 
@@ -92,22 +122,30 @@ describe('OpsPage', () => {
   });
 
   it('shows degraded status when dependency is down', async () => {
-    vi.mocked(client.get).mockResolvedValue({
-      data: {
-        data: {
-          status: 'not_ready',
-          checks: {
-            db: 'up',
-            qdrant: 'down',
-            storage: 'up',
-            model_gateway: 'up',
+    vi.mocked(client.get).mockImplementation((url: string) => {
+      if (url === '/readyz') {
+        return Promise.resolve({
+          data: {
+            data: {
+              status: 'not_ready',
+              checks: {
+                db: 'up',
+                qdrant: 'down',
+                storage: 'up',
+                model_gateway: 'up',
+              },
+            },
           },
-        },
-      },
+        });
+      }
+      if (url === '/metrics/summary') return Promise.resolve(mockMetricsData);
+      if (url === '/metrics/prometheus') return Promise.resolve(mockPrometheusData);
+      return Promise.resolve(mockHealthData);
     });
-    renderOpsPage();
+    const { container } = renderOpsPage();
     await waitFor(() => {
-      expect(screen.getByText('not_ready')).toBeInTheDocument();
+      const banner = container.querySelector('.status-banner.unhealthy');
+      expect(banner).not.toBeNull();
       expect(screen.getByText('down')).toBeInTheDocument();
     });
   });

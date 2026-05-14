@@ -252,12 +252,18 @@ func TestMessageJSONSerialization(t *testing.T) {
 func TestMemoryJSONSerialization(t *testing.T) {
 	t.Parallel()
 
+	sid := "sess_001"
+	uid := "u_001"
 	mem := Memory{
-		ID:        "mem_001",
-		SessionID: "sess_001",
-		Type:      "short_term",
-		Summary:   "user is preparing for exam",
-		CreatedAt: time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC),
+		ID:               "mem_001",
+		SessionID:        &sid,
+		UserID:           &uid,
+		Type:             "short_term",
+		Summary:          "user is preparing for exam",
+		Importance:       0.7,
+		AccessCount:      3,
+		SourceSessionIDs: []string{"sess_001", "sess_002"},
+		CreatedAt:        time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC),
 	}
 
 	data, err := json.Marshal(mem)
@@ -272,6 +278,15 @@ func TestMemoryJSONSerialization(t *testing.T) {
 	}
 	if m["type"] != "short_term" {
 		t.Fatalf("type = %v; want short_term", m["type"])
+	}
+	if m["importance"].(float64) != 0.7 {
+		t.Fatalf("importance = %v; want 0.7", m["importance"])
+	}
+	if m["access_count"].(float64) != 3 {
+		t.Fatalf("access_count = %v; want 3", m["access_count"])
+	}
+	if m["user_id"] != "u_001" {
+		t.Fatalf("user_id = %v; want u_001", m["user_id"])
 	}
 }
 
